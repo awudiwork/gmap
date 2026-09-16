@@ -1,0 +1,69 @@
+# ── 依赖 ────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ── 运行时数据。这两个目录是服务跑起来才有的，不属于代码 ──
+# data/    SQLite 库文件，装着账号、聊天记录、文件索引
+# uploads/ 上传的图片和文件，12 小时后自动清理
+data/
+uploads/
+
+# ── 配置 ────────────────────────────────────────────────
+# .env 里有 ADMIN_PASSWORD，绝不能进版本库。
+# .env.example 是模板，要提交，所以这里逐个列举而不是用 .env*
+.env
+.env.local
+.env.production
+.env.*.local
+
+# ── 日志与崩溃现场 ──────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.heapsnapshot
+core.*
+
+# ── 编辑器与 IDE ────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+.history/
+
+# ── 操作系统 ────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ── Claude Code ─────────────────────────────────────────
+# 本地的权限选择，因人因机而异。
+# .claude/skills/ 和 .claude/agents/ 如果有，应当提交，让团队共用同一套。
+.claude/settings.local.json
+
+# ── 临时文件 ────────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
+*.rej
+.cache/
+tmp/
+
+# ── 注意：下面这些是生成物，但刻意提交 ──────────────────
+# public/fonts/*.woff2     从 @fontsource-variable/jetbrains-mono 复制
+# public/vendor/icons.svg  由 pnpm build:icons 从 @phosphor-icons/core 生成
+#
+# 通常生成物不进版本库，这里是有意为之：这个项目没有构建步骤，
+# clone 下来 pnpm install 之后就该能直接 pnpm start。把这 60 KB 挡在外面，
+# 换来的是每个人都得先跑一遍脚本，还得记住字体是手动复制的那一步。

@@ -1,0 +1,29 @@
+{
+  "name": "gmap",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "游戏地图同步聊天室：客户端截图上传，房间内自动展开最新地图",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "create-user": "node scripts/create-user.js",
+    "build:icons": "node scripts/build-icons.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^12.2.0",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@phosphor-icons/core": "^2.1.1"
+  }
+}

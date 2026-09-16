@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GMAP</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preload" href="/fonts/JetBrainsMono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="deck">
+    <aside class="rail" id="rail">
+      <div class="rail-plate">
+        <span class="wordmark">GMAP</span>
+      </div>
+
+      <div class="rail-section">
+        <span class="stencil">Channel</span>
+        <span class="count" id="roster-count">0</span>
+      </div>
+      <div class="roster" id="roster"></div>
+
+      <div class="rail-foot">
+        <div class="rail-section" style="padding: 0 4px 8px">
+          <span class="stencil">Operator</span>
+        </div>
+        <div class="operator">
+          <div class="face small" id="op-face"></div>
+          <div class="who">
+            <div class="name" id="op-name"></div>
+            <div class="handle" id="op-handle"></div>
+          </div>
+        </div>
+        <div class="rail-actions">
+          <button id="btn-profile">个人资料</button>
+          <button id="btn-keys">上传 Key</button>
+          <button id="btn-users" class="hidden">用户管理</button>
+          <button id="btn-settings">设置</button>
+          <button id="btn-logout">退出</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="console">
+      <header class="bar">
+        <button class="bare only-narrow" id="btn-rail" aria-label="展开侧栏">
+          <svg class="icon" aria-hidden="true"><use href="/vendor/icons.svg#i-list"></use></svg>
+        </button>
+        <span class="channel">大厅</span>
+        <span class="spacer"></span>
+
+        <span id="radar-slot"></span>
+
+        <span class="link-state">
+          <span class="lamp" id="lamp"></span>
+          <span class="label" id="link-label">连接中</span>
+        </span>
+      </header>
+
+      <main class="log" id="log">
+        <div class="log-inner" id="log-inner"></div>
+        <div class="tail-hint hidden" id="tail-hint">
+          <button class="slim" id="btn-tail">
+            <svg class="icon" aria-hidden="true"><use href="/vendor/icons.svg#i-arrow-down"></use></svg>
+            回到最新
+          </button>
+        </div>
+      </main>
+
+      <div class="grip" id="grip" role="separator" aria-orientation="horizontal" tabindex="0"
+           aria-label="拖动调整输入区高度，方向键也可以"></div>
+
+      <footer class="command" id="command">
+        <div class="command-inner">
+          <div class="queue" id="queue"></div>
+          <div class="tray hidden" id="tray"></div>
+          <div class="command-tools">
+            <button class="slim" id="btn-attach">附件</button>
+            <button class="slim mark" id="btn-bold" title="加粗，Ctrl+B"><b>B</b></button>
+            <button class="slim mark" id="btn-tick" title="行内代码，Ctrl+E">&#96;</button>
+            <button class="slim mark" id="btn-code" title="代码块，Ctrl+Shift+C">&#96;&#96;&#96;</button>
+            <span class="spacer"></span>
+            <span class="hint">Enter 发送，Shift+Enter 换行，粘贴的图会先放到待发区</span>
+          </div>
+          <div class="command-line">
+            <span class="prompt" aria-hidden="true">&gt;</span>
+            <div class="editor" id="input" data-placeholder="说点什么，或直接粘贴 / 拖入截图"></div>
+            <button class="key" id="btn-send">发送</button>
+          </div>
+          <input type="file" id="file-input" class="hidden" multiple>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div class="rail-veil hidden" id="rail-veil"></div>
+  <div id="sheet-root"></div>
+  <div id="viewer-root"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# pnpm 10+ 默认禁止依赖执行安装脚本。better-sqlite3 是原生模块，
+# 需要显式放行才能下载或编译 .node 二进制。
+allowBuilds:
+  better-sqlite3: true

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GMAP</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preload" href="/fonts/JetBrainsMono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="gate">
+    <section class="gate-plate">
+      <span class="wordmark">GMAP</span>
+
+      <div>
+        <h1>队友按下热键，你的屏幕展开同一张地图。</h1>
+        <p class="lede">客户端裁掉地图以外的部分推上来，房间里的网页自动打开最新一张。你放大盯着哪个角落，新图就在那个视角上刷新。</p>
+      </div>
+
+      <div class="plate-specs">
+        <dl>
+          <dt>保留期</dt><dd id="spec-retention">读取中</dd>
+          <dt>开号方式</dt><dd id="spec-access">读取中</dd>
+          <dt>上传凭据</dt><dd>登录后自助生成</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="gate-form-wrap">
+      <div class="gate-form">
+        <h2 id="gate-title">登录</h2>
+        <p class="lede" id="gate-lede">登录后进入房间，并生成给截图客户端用的上传 Key。</p>
+
+        <div class="switcher" id="switcher">
+          <button type="button" data-mode="login" class="on">登录</button>
+          <button type="button" data-mode="register">注册</button>
+        </div>
+
+        <form id="gate-form" autocomplete="on">
+          <div class="field">
+            <label for="username">用户名</label>
+            <input type="text" id="username" name="username" autocomplete="username" required>
+          </div>
+          <div class="field hidden" id="display-field">
+            <label for="displayName">昵称，留空则与用户名相同</label>
+            <input type="text" id="displayName" name="displayName" autocomplete="nickname" maxlength="24">
+          </div>
+          <div class="field">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required>
+          </div>
+          <div class="field hidden" id="code-field">
+            <label for="code">邀请码</label>
+            <input type="text" id="code" name="code" autocomplete="off">
+          </div>
+
+          <button type="submit" class="key" id="submit-btn">登录</button>
+          <div class="note" id="gate-note"></div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="/js/login.js"></script>
+</body>
+</html>
