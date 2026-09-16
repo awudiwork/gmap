@@ -258,9 +258,24 @@ input:focus, textarea:focus { border-color: var(--amber-edge); }
   font-size: 12px;
   color: var(--mid);
 }
-.roster-row .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* flex 项默认 min-width:auto 不肯收缩，没有这两条的话 ellipsis 是死代码，
+   24 字的昵称会把后面的铃铛顶出侧栏，还会让名单长出横向滚动条 */
+.roster-row .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-row.self .who { color: var(--fore); }
 .roster-row.self::after { content: "本机"; font-size: 10px; color: var(--dim); margin-left: auto; flex-shrink: 0; }
+/* 单人开关：常显但很轻，亮着是会自动展开，划掉是关了。
+   只有这个按钮变化，头像和名字保持原样：关掉的是通知，不是这个人 */
+.roster-row .mute {
+  flex-shrink: 0;
+  padding: 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--amber);
+}
+.roster-row .mute.off { color: var(--dim); }
+.roster-row .mute:disabled { color: var(--groove-lit); }
+.roster-row .mute:hover:not(:disabled) { background: var(--raised); border-color: transparent; color: var(--amber-lit); }
+.roster-row .mute.off:hover:not(:disabled) { color: var(--mid); }
 .roster .void { padding: 5px 8px; font-size: 11px; color: var(--dim); }
 
 .rail-foot { border-top: 1px solid var(--groove); padding: 12px 10px; }
@@ -791,6 +806,9 @@ code.tick {
   @media (prefers-reduced-motion: no-preference) {
     .rail { transition: transform var(--t-base) var(--snap); }
   }
+  /* 触屏上 22px 的命中区太小，抽屉里更容易点歪。行本身有余量，撑开不影响排版 */
+  .roster-row { padding: 7px 6px; }
+  .roster-row .mute { padding: 9px; }
 }
 
 @media (max-width: 640px) {
@@ -800,9 +818,10 @@ code.tick {
   .face { width: 30px; height: 30px; font-size: 13px; }
   .command-tools .hint { display: none; }
   .viewer-foot { display: none; }
-  /* 窄屏优先保住两个开关和关闭键，次要动作让位 */
+  /* 窄屏优先保住三个开关和关闭键，次要动作让位 */
   .viewer-bar .title, .viewer-bar .sub { display: none; }
   .viewer-bar a.act { display: none; }
+  .viewer-bar button.sw { padding: 8px 9px; }
   .bar { padding: 0 12px; gap: 10px; }
   .bar .link-state .label { display: none; }
   .chip { max-width: 100%; }

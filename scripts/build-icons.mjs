@@ -25,6 +25,7 @@ const OUT = path.join(ROOT, 'public', 'vendor', 'icons.svg')
 const ICONS = [
   'list',                    // 窄屏展开侧栏
   'arrow-down',              // 回到最新
+  'bell-simple', 'bell-simple-slash', // 按人开关自动展开
   'download-simple',         // 附件下载
   'copy',                    // 复制
   'check', 'warning-circle', // toast 的两种结果

@@ -7,7 +7,7 @@
  *  - 危险动作两段式确认，不用 window.confirm。
  */
 import { api, ApiError } from './api.js'
-import { settings } from './settings.js'
+import { settings, unmute } from './settings.js'
 import { el, formatDateTime, icon, openSheet, toast, toggle } from './ui.js'
 
 function textInput({ type = 'text', placeholder = '', value = '', maxLength } = {}) {
@@ -111,17 +111,56 @@ export function openSettings() {
   sourceRow.append(el('span', null, ''), sourceBody)
   block.append(sourceRow)
 
+  const ownPush = settingRow(
+    '展开自己推送的图',
+    '默认关闭。一个人用两块屏、想让游戏机推的图在这边弹出来时才需要打开',
+    current.autoOpenOwnPush,
+    (next) => settings.set({ autoOpenOwnPush: next }),
+  )
   const beep = settingRow('展开时给一声提示', '短促的一声，方便你在游戏里察觉', current.sound, (next) => settings.set({ sound: next }))
-  block.append(beep.row)
+  block.append(ownPush.row, beep.row)
 
-  block.append(el('div', 'lede', '你自己在网页里发的图不会弹，刚发完就在眼前。自己从客户端推的照常展开。'))
+  block.append(el('div', 'lede', '你自己在网页里手动发的图一律不展开，刚发完就在眼前，这条没有开关。'))
 
+  // 在线名单里每个人都有开关，但人一离线就从名单上消失了，
+  // 没有这一段就再也关不回来
+  const mutedBlock = el('div', 'block')
+  mutedBlock.append(
+    el('h3', null, '单独关掉的人'),
+    el('div', 'lede', '这些人推的图不会自动展开，消息照常收。在线名单里每个人名字右边也有同一个开关。'),
+  )
+  const mutedList = el('div', 'ledger')
+  mutedBlock.append(mutedList)
+
+  function renderMuted() {
+    const muted = settings.get().mutedUsers
+    mutedList.replaceChildren()
+    mutedBlock.classList.toggle('hidden', muted.length === 0)
+    // 总开关关着时谁的图都不会弹，这一段同样失去意义
+    mutedBlock.classList.toggle('off', !settings.get().autoOpenImages)
+    for (const entry of muted) {
+      const item = el('div', 'ledger-row')
+      const info = el('div', 'info')
+      info.append(el('div', 'name', entry.name || `用户 ${entry.id}`))
+      item.append(info)
+
+      const restore = button('恢复', { glyph: 'bell-simple' })
+      restore.addEventListener('click', () => {
+        unmute(entry.id)
+        renderMuted()
+      })
+      item.append(restore)
+      mutedList.append(item)
+    }
+  }
   /** 主开关关掉时把从属项置灰，免得出现"设了但不生效"的状态 */
   function syncDisabled() {
     const on = settings.get().autoOpenImages
-    for (const row of [sourceRow, beep.row]) row.classList.toggle('off', !on)
+    for (const row of [sourceRow, ownPush.row, beep.row]) row.classList.toggle('off', !on)
+    ownPush.knob.disabled = !on
     beep.knob.disabled = !on
     for (const node of sourcePick.querySelectorAll('button')) node.disabled = !on
+    renderMuted()
   }
   syncDisabled()
 
@@ -163,7 +202,7 @@ export function openSettings() {
     el('div', 'lede', '这些设置存在这台设备上，不跟账号走。你在游戏机上和在手机上可以是两套。'),
   )
 
-  body.append(block, viewer, scope)
+  body.append(block, mutedBlock, viewer, scope)
 }
 
 /* ── 个人资料 ─────────────────────────────────────────── */

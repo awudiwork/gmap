@@ -6,7 +6,7 @@ import { api, ApiError } from './api.js'
 import { connectRealtime } from './ws-client.js'
 import { buildDayMark, markExpired, renderRow, viewerItem } from './render.js'
 import { show as showViewer } from './viewer.js'
-import { playBeep, settings, shouldAutoOpen } from './settings.js'
+import { isMuted, playBeep, refreshMutedNames, settings, shouldAutoOpen, toggleMute } from './settings.js'
 import { initCommand } from './composer.js'
 import { openKeys, openProfile, openSettings, openUsers } from './panels.js'
 import { avatarInk, avatarLetter, dayKey, el, icon, toast, toggle } from './ui.js'
@@ -129,21 +129,78 @@ function prependRows(messages) {
   log.scrollTop += log.scrollHeight - before
 }
 
+/** 当前这批铃铛的重绘函数。renderRoster 每次重建名单时整体换掉，不会越积越多 */
+let repaintBells = []
+
 function renderRoster(users) {
+  repaintBells = []
   rosterCount.textContent = String(users.length)
   roster.replaceChildren()
+
+  // 对方改了昵称之后，静音记录里存的还是旧名字，趁这次在线名单顺手对齐
+  refreshMutedNames(users)
+
   if (users.length === 0) {
     roster.append(el('div', 'void', '无人在线'))
     return
   }
   for (const user of users) {
-    const row = el('div', user.id === state.me?.id ? 'roster-row self' : 'roster-row')
+    const mine = user.id === state.me?.id
+    const row = el('div', mine ? 'roster-row self' : 'roster-row')
     const face = el('div', 'face mini', avatarLetter(user.name))
     face.style.background = avatarInk(user.name)
     row.append(face, el('span', 'who', user.name))
+
+    // 自己那行不给开关：自己的推送归"展开自己推送的图"那个总开关管
+    if (!mine) row.append(muteButton(user))
+
     roster.append(row)
   }
 }
+
+/** 单人开关：关掉后这个人推的图不再自动展开，消息照常收 */
+function muteButton(user) {
+  const node = el('button', 'mute')
+  node.setAttribute('role', 'switch')
+
+  const paint = () => {
+    const off = isMuted(user.id)
+    const radarOff = !settings.get().autoOpenImages
+    node.classList.toggle('off', off)
+    node.setAttribute('aria-checked', String(!off))
+    node.replaceChildren(icon(off ? 'bell-simple-slash' : 'bell-simple'))
+    // 雷达总开关关着时谁的图都不会弹，这里跟着置灰，
+    // 免得它亮着琥珀却什么也不做
+    node.disabled = radarOff
+    node.title = radarOff
+      ? '雷达总开关关着，现在谁的图都不会自动展开'
+      : (off ? `${user.name} 推的图不会自动展开，点击恢复` : `${user.name} 推的图会自动展开，点击关闭`)
+  }
+
+  node.addEventListener('click', () => {
+    toggleMute(user)
+    paint()
+  })
+
+  paint()
+  repaintBells.push(paint)
+  return node
+}
+
+/**
+ * 设置可能在别处被改掉（设置面板里恢复某人、关掉雷达总开关），
+ * 名单上的铃铛必须跟着走。否则它显示的是旧状态，再点一次就会做成反的。
+ *
+ * 只在真正相关的字段变化时才动，避免看图器缩放时高频写设置连带重画名单。
+ */
+let bellSignature = null
+settings.subscribe((config) => {
+  const signature = `${config.autoOpenImages}|${config.mutedUsers.map((entry) => entry.id).join(',')}`
+  if (signature === bellSignature) return
+  bellSignature = signature
+  // 首次订阅时名单还没画出来，repaintBells 是空的，这里自然什么也不做
+  for (const paint of repaintBells) paint()
+})
 
 function handleIncoming(message) {
   const stick = atBottom()
@@ -280,6 +337,9 @@ async function boot() {
   document.getElementById('btn-rail').addEventListener('click', () => slideRail(true))
   railVeil.addEventListener('click', () => slideRail(false))
   rail.addEventListener('click', (event) => {
+    // 名单上的铃铛是就地切换，不跳转到任何地方。收起抽屉会让人看不到
+    // 自己刚点的那一下有没有生效，连关三个人就得开三次抽屉
+    if (event.target.closest('.mute')) return
     if (event.target.closest('button')) slideRail(false)
   })
 

@@ -151,11 +151,19 @@ function build() {
   const oneToOne = el('button')
   oneToOne.append(icon('magnifying-glass-plus'), el('span', null, '原始大小'))
 
-  /** 顶栏上的两个开关，和设置面板里的是同一份状态，改哪边都同步 */
-  const rememberBtn = el('button', 'sw')
-  rememberBtn.append(el('span', null, '记住缩放'))
-  rememberBtn.title = '下次打开或收到新图时，沿用现在的缩放'
-  rememberBtn.setAttribute('role', 'switch')
+  /**
+   * 顶栏上的三个开关，和设置面板里的是同一份状态，改哪边都同步。
+   * 标签取短的，顶栏本来就挤；完整说明挂在 title 上。
+   */
+  function switchBtn(label, title) {
+    const node = el('button', 'sw')
+    node.append(el('span', null, label))
+    node.title = title
+    node.setAttribute('role', 'switch')
+    return node
+  }
+
+  const rememberBtn = switchBtn('缩放', '记住缩放：下次打开或收到新图时，沿用现在的缩放倍数')
   rememberBtn.addEventListener('click', () => {
     const next = !settings.get().rememberView
     settings.set({ rememberView: next })
@@ -166,21 +174,29 @@ function build() {
     }
   })
 
-  const centerBtn = el('button', 'sw')
-  centerBtn.append(el('span', null, '居中'))
-  centerBtn.title = '沿用缩放时把位置放回画面中心；关掉则连上次盯着的位置一起沿用'
-  centerBtn.setAttribute('role', 'switch')
+  const centerBtn = switchBtn('居中', '沿用缩放时把位置放回画面中心；关掉则连上次盯着的位置一起沿用')
   centerBtn.addEventListener('click', () => {
     settings.set({ centerOnOpen: !settings.get().centerOnOpen })
+  })
+
+  const ownBtn = switchBtn('自己的', '展开自己从客户端推的图，默认关闭。一个人用两块屏时才需要打开。网页里手动发的图一律不展开')
+  ownBtn.addEventListener('click', () => {
+    settings.set({ autoOpenOwnPush: !settings.get().autoOpenOwnPush })
   })
 
   state.unsubscribe = settings.subscribe((config) => {
     rememberBtn.classList.toggle('on', config.rememberView)
     rememberBtn.setAttribute('aria-checked', String(config.rememberView))
+
     centerBtn.classList.toggle('on', config.rememberView && config.centerOnOpen)
     centerBtn.setAttribute('aria-checked', String(config.centerOnOpen))
-    // 没开"记住缩放"时，"居中"无从生效，置灰而不是让人以为设了有用
+    // 没开"记住缩放"时"居中"无从生效，置灰而不是让人以为设了有用
     centerBtn.disabled = !config.rememberView
+
+    ownBtn.classList.toggle('on', config.autoOpenImages && config.autoOpenOwnPush)
+    ownBtn.setAttribute('aria-checked', String(config.autoOpenOwnPush))
+    // 雷达总开关关着时，什么都不会自动展开，这个开关同理失去意义
+    ownBtn.disabled = !config.autoOpenImages
   })
 
   // 用 <a> 而不是按钮，保留中键和右键的原生行为
@@ -196,7 +212,7 @@ function build() {
   closeBtn.title = '关闭，Esc 同样生效'
   closeBtn.setAttribute('aria-label', '关闭')
 
-  bar.append(meta, el('span', 'spacer'), zoom, rememberBtn, centerBtn, fitBtn, oneToOne, openRaw, closeBtn)
+  bar.append(meta, el('span', 'spacer'), zoom, rememberBtn, centerBtn, ownBtn, fitBtn, oneToOne, openRaw, closeBtn)
 
   const foot = el('div', 'viewer-foot')
   foot.append(
