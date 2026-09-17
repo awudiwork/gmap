@@ -18,7 +18,11 @@ const HEIGHT_KEY = 'gmap.command.height'
 const MIN_HEIGHT = 108
 const MAX_RATIO = 0.62
 
-export function initCommand() {
+/**
+ * @param {() => string} currentRoom 取当前频道。做成函数而不是传值，
+ *        因为输入区活得比任何一次频道切换都长
+ */
+export function initCommand(currentRoom) {
   const command = document.getElementById('command')
   const grip = document.getElementById('grip')
   const inputHost = document.getElementById('input')
@@ -136,9 +140,11 @@ export function initCommand() {
 
   function enqueue(file, caption) {
     const ui = queueRow(file)
+    // 发起时就把频道定下来，传的过程中切走了也该落在当初那个房间
+    const room = currentRoom()
     pending.push(async () => {
       try {
-        await api.upload({ file, caption, onProgress: ui.progress })
+        await api.upload({ file, caption, room, onProgress: ui.progress })
         ui.done()
       } catch (err) {
         ui.fail(err instanceof ApiError ? err.message : '上传失败')
@@ -166,7 +172,7 @@ export function initCommand() {
 
     sendBtn.disabled = true
     try {
-      await api.sendText({ kind: 'text', body })
+      await api.sendText({ room: currentRoom(), kind: 'text', body })
       editor.clear()
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '发送失败', 'bad')

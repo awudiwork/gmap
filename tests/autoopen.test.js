@@ -15,8 +15,9 @@ const OTHER = 9
 const defaults = { ...DEFAULTS }
 
 /** 造一条图片消息 */
-const image = ({ from = OTHER, source = 'api', url = '/api/files/1' } = {}) => ({
+const image = ({ from = OTHER, source = 'api', url = '/api/files/1', room = 'all' } = {}) => ({
   kind: 'file',
+  room,
   source,
   user: { id: from },
   file: { category: 'image', url },
@@ -24,6 +25,10 @@ const image = ({ from = OTHER, source = 'api', url = '/api/files/1' } = {}) => (
 
 const decide = (message, patch = {}) =>
   decideAutoOpen({ message, meId: ME, config: { ...defaults, ...patch } })
+
+/** 带上"我现在在哪个频道"再判断 */
+const decideIn = (currentRoom, message, patch = {}) =>
+  decideAutoOpen({ message, meId: ME, currentRoom, config: { ...defaults, ...patch } })
 
 test('队友用客户端推的图会展开', () => {
   assert.equal(decide(image()), true)
@@ -111,4 +116,20 @@ test('来源开到全部时，被关掉的人两种来源都不弹', () => {
 
 test('默认没有人被关掉', () => {
   assert.deepEqual(DEFAULTS.mutedUsers, [])
+})
+
+test('只展开当前所在频道的图', () => {
+  assert.equal(decideIn('wardogs', image({ room: 'wardogs' })), true)
+  assert.equal(decideIn('wardogs', image({ room: 'all' })), false, '别的频道的图不该抢过来占满屏幕')
+  assert.equal(decideIn('all', image({ room: 'wardogs' })), false)
+})
+
+test('频道判断排在最前，别的条件再宽也盖不过它', () => {
+  const loose = { autoOpenSource: 'all', autoOpenOwnPush: true }
+  assert.equal(decideIn('all', image({ room: 'wardogs', from: ME, source: 'api' }), loose), false)
+})
+
+test('不传当前频道时跳过这条规则', () => {
+  // 供其它用例单独验证别的规则，不必每次都编一个频道
+  assert.equal(decide(image({ room: 'wardogs' })), true)
 })

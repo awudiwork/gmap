@@ -211,13 +211,28 @@ export function renderRow(message, previous, meId) {
   return row
 }
 
-/** 清理任务通知文件过期时，把页面上对应的附件就地换成占位块 */
-export function markExpired(fileIds) {
-  for (const id of fileIds) {
-    for (const node of document.querySelectorAll(`.att[data-file-id="${CSS.escape(String(id))}"]`)) {
-      const caption = node.querySelector('.caption')
-      node.replaceChildren(goneBlock(node.dataset.fileKind ?? 'BIN', node.dataset.fileName ?? ''))
-      if (caption) node.append(caption)
-    }
+/**
+ * 清理任务报告某些消息到期时，把它们从页面上摘掉。
+ *
+ * 顺带清理因此变空的日期分隔线：一整天的消息都过期了，那条"昨天"
+ * 就没有内容可分隔了，留着是个孤零零的标签。
+ *
+ * @returns {number} 实际移除的条数
+ */
+export function dropMessages(ids) {
+  let removed = 0
+  for (const id of ids) {
+    const node = document.querySelector(`.turn[data-message-id="${CSS.escape(String(id))}"]`)
+    if (!node) continue
+    node.remove()
+    removed += 1
   }
+
+  for (const mark of document.querySelectorAll('.day-mark')) {
+    // 后面紧跟着的如果不是消息，这条分隔线就没有东西可分隔了
+    const next = mark.nextElementSibling
+    if (!next || !next.classList.contains('turn')) mark.remove()
+  }
+
+  return removed
 }

@@ -94,7 +94,29 @@ gmap_6c78b26861d0f7c5d91c35c0b973c443a9de6b03
 Key 存进客户端配置文件或环境变量，**不要写进源码**。丢了就在页面上删掉重建，删除立即生效。
 删除是物理删除，列表里不留"已吊销"的历史行：Key 不像账号那样挂着聊天记录，留档只会让列表越来越长。
 
-### 2. 上传
+### 2. 取频道清单
+
+客户端不要硬编码频道，从这里读，服务端加了新游戏你不用跟着改版本：
+
+```
+GET /api/rooms
+Authorization: Bearer <你的Key>
+```
+
+```json
+{
+  "ok": true,
+  "defaultRoom": "all",
+  "rooms": [
+    { "id": "all",     "name": "全部",    "short": "ALL", "icon": null,                  "hint": "没有单独频道的游戏都发这里" },
+    { "id": "wardogs", "name": "Wardogs", "short": "WD",  "icon": "/games/wardogs.webp", "hint": "战狗" }
+  ]
+}
+```
+
+这个接口和上传用同一把 Key，不需要另外登录。
+
+### 3. 上传
 
 ```
 POST /api/upload
@@ -106,6 +128,7 @@ Content-Type: multipart/form-data
 | --- | --- | --- |
 | `file` | 是 | 文件本体。图片/视频/任意文件都行 |
 | `caption` | 否 | 附在图片下方的说明文字，最长 4000 字 |
+| `room` | 否 | 频道 id，见上面的频道表。不填或填了不认识的值都落到 `all` |
 
 成功返回 `201`：
 
@@ -130,6 +153,7 @@ Content-Type: multipart/form-data
 
 | HTTP | `code` | 含义 |
 | --- | --- | --- |
+| 429 | `upload_too_fast` | 两次上传之间不足 `UPLOAD_MIN_INTERVAL_MS`（默认 1 秒） |
 | 401 | `missing_credentials` | 没带 Key |
 | 401 | `invalid_api_key` | Key 错误、已被删除，或所属账号已注销 |
 | 400 | `missing_file` | 没有名为 `file` 的表单字段 |
@@ -137,7 +161,7 @@ Content-Type: multipart/form-data
 | 413 | `file_too_large` | 超过 `MAX_UPLOAD_MB` |
 | 429 | `upload_rate_limited` | 超过 `UPLOAD_RATE_PER_MINUTE`，响应里有建议等待秒数 |
 
-### 3. 示例
+### 4. 示例
 
 **curl**
 
@@ -145,6 +169,7 @@ Content-Type: multipart/form-data
 curl -X POST http://your-host:3000/api/upload \
   -H "Authorization: Bearer gmap_xxxxxxxx" \
   -F "file=@map.png" \
+  -F "room=wardogs" \
   -F "caption=北区刷新"
 ```
 
@@ -154,16 +179,19 @@ curl -X POST http://your-host:3000/api/upload \
 import os
 import requests
 
-def push_map(image_path: str, caption: str = "") -> dict:
-    """把裁好的地图推到聊天室。失败时抛 requests.HTTPError。"""
+def push_map(image_path: str, room: str = "all", caption: str = "") -> dict:
+    """把裁好的地图推到指定频道。失败时抛 requests.HTTPError。"""
     with open(image_path, "rb") as fp:
         response = requests.post(
             f"{os.environ['GMAP_URL']}/api/upload",
             headers={"Authorization": f"Bearer {os.environ['GMAP_KEY']}"},
             files={"file": (os.path.basename(image_path), fp, "image/png")},
-            data={"caption": caption},
+            data={"room": room, "caption": caption},
             timeout=15,
         )
+    if response.status_code == 429:
+        # 两次上传至少隔 1 秒，这不是错误，等一下重发即可
+        raise RuntimeError(response.json().get("message", "上传太快"))
     if not response.ok:
         detail = response.json().get("message", response.text)
         raise requests.HTTPError(f"上传失败 [{response.status_code}] {detail}")
@@ -175,6 +203,7 @@ def push_map(image_path: str, caption: str = "") -> dict:
 ```csharp
 using var content = new MultipartFormDataContent();
 content.Add(new ByteArrayContent(pngBytes), "file", "map.png");
+content.Add(new StringContent(room), "room");
 content.Add(new StringContent(caption), "caption");
 
 using var http = new HttpClient();
@@ -183,41 +212,72 @@ var response = await http.PostAsync($"{baseUrl}/api/upload", content);
 response.EnsureSuccessStatusCode();
 ```
 
-### 4. 客户端侧建议
+### 5. 客户端侧建议
 
 - **裁剪**：只保留地图区域。分辨率固定下来最好——网页端在新图和旧图**像素尺寸一致**时会保留当前的缩放和平移，
   你放大盯着某个角落时新图会在同一视角刷新；尺寸一变就只能重新适应窗口。
 - **格式**：PNG 无损、适合像素级细节；地图颜色少，体积通常比 JPEG 还小。
-- **节流**：热键连按会被服务端限流（默认 30 次/分钟）。客户端自己加个 1~2 秒的最小间隔更稳。
+- **节流**：服务端有两道闸，**两次上传至少隔 1 秒**（`UPLOAD_MIN_INTERVAL_MS`，挡热键连按），
+  每分钟最多 30 次（`UPLOAD_RATE_PER_MINUTE`，挡持续刷屏）。客户端自己也做一下间隔判断，
+  别把被拒的请求当成网络错误反复重试。收到 `upload_too_fast` 等一下再发即可。
 - **重试**：网络抖动时重试 1~2 次即可；收到 401 不要重试，是 Key 的问题。
 
 ---
 
+## 频道
+
+按游戏分频道。最左边一竖排游戏图标，最上面是「全部」，没有单独频道的游戏都发那里。
+
+| 频道 | id | 说明 |
+| --- | --- | --- |
+| 全部 | `all` | 兜底频道，也是默认频道 |
+| Wardogs | `wardogs` | 战狗 |
+
+消息按频道隔离，互相看不见。别的频道来新消息时，那个图标右上角会亮一个琥珀小方块，
+切过去就消掉。上次待的频道记在浏览器本地，下次进来直接回到那里。
+
+**加一个游戏**：把图标放进 `public/games/`，在 `server/lib/rooms.js` 的清单里加一条。
+`tests/rooms.test.js` 会校验 id 合法、图标文件真的存在。
+
+房间清单**硬编码而不是建表**，因为每个游戏迟早要带上自己的东西（地图画幅、坐标系、
+裁剪提示、专属的客户端参数），那些逻辑写在代码里比塞进数据库好维护，
+也让「加一个游戏」这件事有唯一的落点。
+
+> 房间 id 会写进数据库，**定下来就不要改**，否则历史消息会落到一个不存在的频道里。
+
+截图客户端推图时带上 `room` 字段就能指定频道，不带或者传了不认识的值都会落到 `all`：
+老版本客户端推错地方，也好过把图推丢。
+
 ## 网页端布局
 
 ```
-┌──────────────┬──────────────────────────────────────────┐
-│ GMAP         │ 大厅            [▮══] RADAR 仅 API  ● 已连接│
-├──────────────┼──────────────────────────────────────────┤
-│ CHANNEL    3 │                                          │
-│ ▌ 侦察兵      │ 14:23:07 │ 侦察兵  │ 北区已清              │
-│ ▌ 游侠        │ 14:23:41 │ 游侠 API                      │
-│ ▌ admin  本机 │          │        │ IMG  north.png 412 KB │
-│              │          │        │ ┌────────────────┐    │
-├──────────────┤          │        │ │   [地图截图]    │    │
-│ OPERATOR     │          │        │ └────────────────┘    │
-│ 侦察兵        │ 14:24:02 │        │ 南边有人              │
-│ scout        ├──────────────────────────────────────────┤
-│ 个人资料      │ > 说点什么                          [发送] │
-│ 上传 Key      │                                          │
-│ 用户管理      │                                          │
-│ 设置          │                                          │
-│ 退出          │                                          │
-└──────────────┴──────────────────────────────────────────┘
+┌────┬──────────────┬────────────────────────────────────┐
+│ALL │ GMAP         │ Wardogs  战狗   [▮══] RADAR  ● 已连接│
+│────│──────────────┼────────────────────────────────────┤
+│[WD]│ CHANNEL    3 │ 只保留最近 12 小时的消息，更早的已清除 │
+│    │ ▌侦察兵    铃 │ ──────────── 今天 ────────────       │
+│    │ ▌游侠      铃 │                                    │
+│    │ ▌admin  本机 │ [游] 游侠  14:23  API               │
+│    │              │ ┌────────────────┐                 │
+│    │──────────────│ │   [地图截图]    │                 │
+│    │ OPERATOR     │ └────────────────┘                 │
+│    │ [侦] 侦察兵   │                                    │
+│    │ scout        │              14:24  我  [侦]        │
+│    │ 个人资料      │             ┌──────────┐           │
+│    │ 上传 Key      │             │ 收到      │           │
+│    │ 用户管理      │             └──────────┘           │
+│    │ 设置         ├────────────────────────────────────┤
+│    │ 退出         │ > 说点什么                   [发送]  │
+└────┴──────────────┴────────────────────────────────────┘
 ```
 
-左侧是通道面板：在线名单在上，本机操作员和操作入口在下，「用户管理」只对管理员显示。
-顶栏那个拨钮就是雷达开关本身，拨一下即开关，旁边跟着当前策略。
+**最左边是频道栏**，一竖排游戏图标，「全部」在最上面。别的频道有新消息时图标右上角亮一个小方块。
+
+**中间是通道面板**：在线名单在上，每个名字右边一个铃铛（关掉这个人的自动展开），
+本机操作员和操作入口在下，「用户管理」只对管理员显示。
+
+**右边是消息流**：别人靠左、自己靠右，同一人 5 分钟内的连续发言并成一组。
+顶栏那个拨钮就是雷达开关本身，拨一下即开关。
 同一人 5 分钟内的连续发言不重复打呼号，但时间戳每行都留，因为这是日志。
 窄屏（≤780px）下侧栏收成抽屉，≤640px 时时间列让位给内容。
 
@@ -263,6 +323,10 @@ response.EnsureSuccessStatusCode();
 | 展开自己推送的图 | 关 | 自己从客户端推的图要不要在这块屏幕上展开。一个人用两块屏时才需要打开 |
 | 展开时给一声提示 | 关 | 短促的一声，方便在游戏里察觉 |
 
+**只展开你当前所在频道的图。** 切频道的意思就是"我现在只关心这个"，
+别的频道有新图时只在频道栏上点个未读，不会抢过来占满屏幕。这条排在所有规则最前面，
+别的条件设得再宽也盖不过它。
+
 **你在网页里手动发的图一律不展开**，刚拖进去就在眼前，再弹一次是打扰。这条没有开关。
 上面那个"展开自己推送的图"只管客户端推来的。
 
@@ -293,15 +357,23 @@ response.EnsureSuccessStatusCode();
 
 ---
 
-## 文件保留与清理
+## 保留期与清理
 
-上传的文件在 `FILE_RETENTION_HOURS`（默认 12）小时后从磁盘物理删除。
+**房间是一个滚动窗口。** 超过 `RETENTION_HOURS`（默认 12）的内容整条消失：
+文字、代码块、图片、视频、文件一视同仁，磁盘上的附件同时删掉。
+消息流顶部有一条提示说明这件事。
 
-- **聊天记录不会被删**，过期附件在页面上显示为「⌛ 附件已超过保留期」，历史不断链。
-- 过期时间在上传那一刻就算好了，之后改配置不影响已有文件。
-- 清理任务每 `CLEANUP_INTERVAL_MINUTES` 分钟跑一轮，启动时也会立刻跑一次（覆盖停机期间到期的文件）。
-- 删除失败（磁盘占用等）不会标记为已删，下一轮自然重试，不会出现「库说删了、磁盘还在」。
+- **到期时间在消息发出那一刻就算好了。** 之后把保留期调短，只影响新消息，
+  不会让已有历史当场蒸发。存量消息（升级前发的）没有这个字段，按「创建时间 + 当前配置」兜底。
+- 清理任务每 `CLEANUP_INTERVAL_MINUTES` 分钟跑一轮，启动时也会立刻跑一次（覆盖停机期间到期的内容）。
+- **先删库再删磁盘。** 库是事实来源；磁盘上删不掉的残留交给孤儿扫描兜底，
+  不会出现「库里没了、磁盘还在」之外的第三种状态。
+- 在线的客户端会收到 `messages_expired` 事件，页面上对应的消息当场移除，
+  连带清掉因此变空的日期分隔线。
 - 顺带清理孤儿文件（落盘后入库失败的残留）和过期会话。
+
+> `FILE_RETENTION_HOURS` 已更名为 `RETENTION_HOURS`，因为它现在管的不只是文件。
+> 旧名还留在 `.env` 里的话，服务会**拒绝启动**并提示改名，而不是默默退回默认值。
 
 ---
 
@@ -318,13 +390,14 @@ response.EnsureSuccessStatusCode();
 | `ADMIN_PASSWORD` | 空 | 管理员密码，**首次启动前必填** |
 | `ALLOW_REGISTRATION` | `false` | 是否开放自助注册 |
 | `REGISTRATION_CODE` | 空 | 注册邀请码，仅在开放注册时有意义 |
-| `FILE_RETENTION_HOURS` | `12` | 文件保留小时数 |
+| `RETENTION_HOURS` | `12` | 保留期。超过这个时长的消息连同附件一起删除 |
 | `CLEANUP_INTERVAL_MINUTES` | `10` | 清理任务间隔 |
 | `MAX_UPLOAD_MB` | `25` | 单文件大小上限 |
 | `HISTORY_LIMIT` | `80` | 首屏加载的历史消息条数 |
 | `SESSION_TTL_DAYS` | `30` | 登录会话有效期 |
 | `COOKIE_SECURE` | `false` | 用 HTTPS 部署时改成 `true` |
-| `UPLOAD_RATE_PER_MINUTE` | `30` | 每个 Key 每分钟上传次数上限 |
+| `UPLOAD_MIN_INTERVAL_MS` | `1000` | 两次上传的最小间隔，挡热键连按。`0` 不限制，只对 API Key 生效 |
+| `UPLOAD_RATE_PER_MINUTE` | `30` | 每分钟上传次数上限，挡持续刷屏 |
 
 ---
 

@@ -281,21 +281,39 @@ export async function openKeys() {
   const note = el('div', 'note')
   block.append(row, note)
 
-  const docs = el('div', 'block')
-  docs.append(
-    el('h3', null, '客户端怎么调'),
-    el('div', 'lede', '一次 multipart 上传。字段名固定是 file，可选 caption 作为说明文字。'),
+  /* 客户端对接。两个接口用的是同一把 Key，都不需要另外登录 */
+
+  const roomsDoc = el('div', 'block')
+  roomsDoc.append(
+    el('h3', null, '取频道清单'),
+    el('div', 'lede', '别在客户端里写死频道。从这个接口读，以后加了新游戏，客户端不用跟着改。'),
   )
-  const snippet = el('pre', 'snippet')
-  snippet.textContent = [
+  const roomsSnippet = el('pre', 'snippet')
+  roomsSnippet.textContent = [
+    `curl ${location.origin}/api/rooms \\`,
+    '  -H "Authorization: Bearer <你的Key>"',
+  ].join('\n')
+  roomsDoc.append(roomsSnippet)
+
+  const uploadDoc = el('div', 'block')
+  uploadDoc.append(
+    el('h3', null, '推图'),
+    el('div', 'lede', '一次 multipart 上传。字段名固定是 file，room 指定推到哪个频道，caption 是说明文字。不带 room 会落到「全部」。'),
+  )
+  const uploadSnippet = el('pre', 'snippet')
+  uploadSnippet.textContent = [
     `curl -X POST ${location.origin}/api/upload \\`,
     '  -H "Authorization: Bearer <你的Key>" \\',
     '  -F "file=@map.png" \\',
+    '  -F "room=wardogs" \\',
     '  -F "caption=北区刷新"',
   ].join('\n')
-  docs.append(snippet)
+  uploadDoc.append(
+    uploadSnippet,
+    el('div', 'lede', '两次上传之间至少隔 1 秒，太快会收到 429 和 upload_too_fast。那不是错误，等一下重发就行，别当成网络故障一直重试。'),
+  )
 
-  body.append(block, docs)
+  body.append(block, roomsDoc, uploadDoc)
 
   function renderKeys(keys) {
     ledger.replaceChildren()

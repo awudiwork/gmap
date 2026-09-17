@@ -231,6 +231,53 @@ input:focus, textarea:focus { border-color: var(--amber-edge); }
 .deck { display: flex; height: 100%; }
 .console { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
+/* ── 频道栏：最左边一竖排游戏图标 ────────────────────── */
+.games {
+  width: var(--games);
+  flex-shrink: 0;
+  border-right: 1px solid var(--groove);
+  background: var(--void);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 0;
+  overflow-y: auto;
+}
+.games::-webkit-scrollbar { width: 0; }
+
+.game {
+  position: relative;
+  width: 42px; height: 42px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--groove);
+  background: var(--panel);
+  color: var(--dim);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  display: grid; place-items: center;
+  overflow: hidden;
+}
+.game img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.game:hover:not(:disabled) { border-color: var(--amber-edge); color: var(--fore); }
+.game:active:not(:disabled) { transform: translateY(1px); }
+/* 当前频道：左侧一道琥珀条，图标本身也亮起来 */
+.game.on { border-color: var(--amber); color: var(--amber); }
+.game.on::before {
+  content: "";
+  position: absolute; left: -9px; top: 50%;
+  width: 3px; height: 22px;
+  transform: translateY(-50%);
+  background: var(--amber);
+}
+/* 未读：右上角一个小方块。别的频道有新消息时才出现 */
+.game .unread {
+  position: absolute; top: 2px; right: 2px;
+  width: 7px; height: 7px;
+  background: var(--amber);
+}
+.games .divider { width: 22px; height: 1px; background: var(--groove); flex-shrink: 0; margin: 2px 0; }
+
 .rail {
   width: var(--rail);
   flex-shrink: 0;
@@ -303,6 +350,7 @@ input:focus, textarea:focus { border-color: var(--amber-edge); }
   flex-shrink: 0;
 }
 .bar .channel { font-size: 13px; font-weight: 500; }
+.bar .room-hint { color: var(--dim); font-size: 11.5px; }
 .bar .spacer { flex: 1; }
 .bar .link-state { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--dim); letter-spacing: 0.04em; }
 /* 状态灯：熄灭是暗槽色，通联是琥珀，断链是告警红。三态都有真实含义 */
@@ -326,6 +374,15 @@ input:focus, textarea:focus { border-color: var(--amber-edge); }
 .log::-webkit-scrollbar-track, .roster::-webkit-scrollbar-track, .sheet::-webkit-scrollbar-track { background: var(--void); }
 .log::-webkit-scrollbar-thumb, .roster::-webkit-scrollbar-thumb, .sheet::-webkit-scrollbar-thumb { background: var(--groove); }
 .log::-webkit-scrollbar-thumb:hover, .roster::-webkit-scrollbar-thumb:hover, .sheet::-webkit-scrollbar-thumb:hover { background: var(--groove-lit); }
+
+/* 房间是个滚动窗口，这条说清更早的东西为什么不在了 */
+.retention-note {
+  font-size: 11px;
+  color: var(--dim);
+  padding: 4px 0 2px;
+  border-bottom: 1px dashed var(--groove);
+  margin-bottom: 4px;
+}
 
 .day-mark {
   display: flex; align-items: center; gap: 12px;
@@ -798,11 +855,19 @@ code.tick {
 
 @media (max-width: 780px) {
   .only-narrow { display: inline-flex; }
-  .rail {
-    position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
+  /* 窄屏时频道栏跟着侧栏一起收进抽屉，两者是一组导航 */
+  .games {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 51;
     transform: translateX(-100%);
   }
-  .rail.out { transform: none; }
+  .rail {
+    position: fixed; top: 0; bottom: 0; left: var(--games); z-index: 50;
+    transform: translateX(calc(-100% - var(--games)));
+  }
+  .games.out, .rail.out { transform: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .games { transition: transform var(--t-base) var(--snap); }
+  }
   @media (prefers-reduced-motion: no-preference) {
     .rail { transition: transform var(--t-base) var(--snap); }
   }

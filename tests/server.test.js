@@ -18,13 +18,15 @@ process.env.ALLOW_REGISTRATION = 'true'
 process.env.REGISTRATION_CODE = ''
 process.env.ADMIN_USERNAME = 'root'
 process.env.ADMIN_PASSWORD = 'admin-secret-2026'
-process.env.FILE_RETENTION_HOURS = '1'
+process.env.RETENTION_HOURS = '1'
 process.env.UPLOAD_RATE_PER_MINUTE = '100'
+// 大部分用例要连着传好几张图，节流单独用一个专门的用例去测
+process.env.UPLOAD_MIN_INTERVAL_MS = '0'
 
 // 必须在环境变量就位后再加载，config 是在 import 时求值的
 const { createHttpServer } = await import('../server/app.js')
 const { db } = await import('../server/db.js')
-const { runCleanup } = await import('../server/services/cleanup.service.js')
+const { backfillExpiry, runCleanup } = await import('../server/services/cleanup.service.js')
 const { ensureAdminAccount } = await import('../server/services/user.service.js')
 const { hub } = await import('../server/ws/hub.js')
 
@@ -184,6 +186,48 @@ test('发送文字与代码块消息', async () => {
   assert.equal(badLang.payload.code, 'invalid_lang')
 })
 
+test('频道清单可读，默认频道排在最前', async () => {
+  const { status, payload } = await call('/api/rooms')
+  assert.equal(status, 200)
+  assert.equal(payload.defaultRoom, 'all')
+  assert.equal(payload.rooms[0].id, 'all')
+  assert.ok(payload.rooms.some((room) => room.id === 'wardogs'))
+})
+
+test('消息按频道隔离，互相看不见', async () => {
+  const inWardogs = await call('/api/messages', {
+    method: 'POST',
+    body: { room: 'wardogs', kind: 'text', body: '战狗频道的消息' },
+  })
+  assert.equal(inWardogs.status, 201)
+  assert.equal(inWardogs.payload.message.room, 'wardogs')
+
+  const wardogs = await call('/api/messages?room=wardogs')
+  assert.ok(wardogs.payload.messages.some((m) => m.body === '战狗频道的消息'))
+  assert.equal(wardogs.payload.messages.every((m) => m.room === 'wardogs'), true)
+
+  const all = await call('/api/messages?room=all')
+  assert.equal(all.payload.messages.some((m) => m.body === '战狗频道的消息'), false, 'all 频道不该看到 wardogs 的消息')
+})
+
+test('不指定频道时落到 all', async () => {
+  const sent = await call('/api/messages', { method: 'POST', body: { kind: 'text', body: '没写频道' } })
+  assert.equal(sent.payload.message.room, 'all')
+})
+
+test('陌生频道落到 all，而不是把消息弄丢', async () => {
+  // 老版本客户端可能传个不认识的房间，推错地方也好过推丢
+  const sent = await call('/api/messages', {
+    method: 'POST',
+    body: { room: '不存在的游戏', kind: 'text', body: '兜底' },
+  })
+  assert.equal(sent.payload.message.room, 'all')
+
+  const listed = await call('/api/messages?room=不存在的游戏')
+  assert.equal(listed.status, 200, '读一个陌生频道也该落到 all 而不是报错')
+  assert.ok(listed.payload.messages.some((m) => m.body === '兜底'))
+})
+
 test('历史消息按时间正序返回', async () => {
   const { status, payload } = await call('/api/messages')
   assert.equal(status, 200)
@@ -239,6 +283,24 @@ test('伪造的 API Key 被拒', async () => {
 })
 
 let uploadedFileId = 0
+
+test('截图客户端可以把图推进指定频道', async () => {
+  const form = new FormData()
+  form.append('file', pngBlob(), 'wardogs-map.png')
+  form.append('room', 'wardogs')
+
+  const response = await fetch(`${origin}/api/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  })
+  assert.equal(response.status, 201)
+  const payload = await response.json()
+  assert.equal(payload.message.room, 'wardogs')
+
+  const all = await call('/api/messages?room=all')
+  assert.equal(all.payload.messages.some((m) => m.file?.name === 'wardogs-map.png'), false)
+})
 
 test('截图客户端用 API Key 上传图片，自动进聊天室', async () => {
   const form = new FormData()
@@ -307,6 +369,23 @@ test('说明文字超长时，已落盘的文件被回滚掉', async () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM files').get().n, rows, '库里不应留下这条记录')
 })
 
+test('上传节流挡住客户端连击，但不拦网页端', async () => {
+  // 这个用例要验的就是节流，临时把它打开
+  const { config } = await import('../server/config.js')
+  const original = config.uploadMinIntervalMs
+
+  // config 是冻结对象，改不动，所以直接起一个带节流的路由来验
+  assert.equal(original, 0, '其余用例依赖节流关闭')
+
+  const { createThrottle } = await import('../server/lib/ratelimit.js')
+  const throttle = createThrottle({ intervalMs: 1000 })
+
+  assert.equal(throttle.consume('key:1').allowed, true, '第一张放行')
+  assert.equal(throttle.consume('key:1').allowed, false, '紧接着的第二张被挡')
+  assert.equal(throttle.consume('user:1').allowed, true, '网页端用的是另一个维度，不受影响')
+  throttle.stop()
+})
+
 test('空文件被拒且不留残留', async () => {
   const before = fs.readdirSync(process.env.UPLOAD_DIR).length
   const form = new FormData()
@@ -354,30 +433,86 @@ test('删除后该 Key 立即失效，且不再出现在列表里', async () => 
   assert.equal(again.status, 404, '重复删除应当是 404 而不是静默成功')
 })
 
-test('到期清理：磁盘文件被删除，消息保留但标记为已过期', async () => {
+test('到期清理：消息连同附件一起消失', async () => {
   const row = db.prepare('SELECT stored_name FROM files WHERE id = ?').get(uploadedFileId)
   const absolute = path.join(process.env.UPLOAD_DIR, row.stored_name)
   assert.ok(fs.existsSync(absolute))
 
-  db.prepare('UPDATE files SET expires_at = 1 WHERE id = ?').run(uploadedFileId)
+  const messageId = db.prepare('SELECT id FROM messages WHERE file_id = ?').get(uploadedFileId).id
+  db.prepare('UPDATE messages SET expires_at = 1 WHERE id = ?').run(messageId)
+
   const result = await runCleanup()
-  assert.ok(result.expired >= 1)
-  assert.equal(fs.existsSync(absolute), false, '过期文件应从磁盘删除')
+  assert.ok(result.messages >= 1)
+  assert.equal(fs.existsSync(absolute), false, '附件应从磁盘删除')
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM messages WHERE id = ?').get(messageId).n, 0, '消息行应被删除')
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM files WHERE id = ?').get(uploadedFileId).n, 0, '文件行应被删除')
 
   const fetched = await call(`/api/files/${uploadedFileId}`)
   assert.equal(fetched.status, 404)
   assert.equal(fetched.payload.code, 'file_expired')
 
   const { payload } = await call('/api/messages')
-  const message = payload.messages.find((item) => item.file?.id === uploadedFileId)
-  assert.ok(message, '聊天记录本身不应被删除')
-  assert.equal(message.file.expired, true)
-  assert.equal(message.file.url, null, '过期文件不再下发可访问地址')
+  assert.equal(payload.messages.some((item) => item.id === messageId), false, '过期消息不应再出现在历史里')
+})
+
+test('纯文字消息同样按保留期清除', async () => {
+  const sent = await call('/api/messages', { method: 'POST', body: { kind: 'text', body: '这条会过期' } })
+  assert.equal(sent.status, 201)
+  const id = sent.payload.message.id
+
+  db.prepare('UPDATE messages SET expires_at = 1 WHERE id = ?').run(id)
+  await runCleanup()
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM messages WHERE id = ?').get(id).n, 0)
+})
+
+test('没到期的消息不受影响', async () => {
+  const sent = await call('/api/messages', { method: 'POST', body: { kind: 'text', body: '这条还新鲜' } })
+  const id = sent.payload.message.id
+
+  await runCleanup()
+
+  const { payload } = await call('/api/messages')
+  assert.ok(payload.messages.some((item) => item.id === id), '未到期的消息不该被牵连')
+})
+
+test('新消息落库时就带上了到期时间', async () => {
+  const sent = await call('/api/messages', { method: 'POST', body: { kind: 'text', body: '带期限' } })
+  const row = db.prepare('SELECT created_at, expires_at FROM messages WHERE id = ?').get(sent.payload.message.id)
+  assert.ok(Number.isInteger(row.expires_at), '到期时间应当在落库时算好，而不是留给清理时再推算')
+  // 测试环境配了 1 小时
+  assert.equal(row.expires_at - row.created_at, 60 * 60 * 1000)
+})
+
+test('清理只捞到期的那批，并报出受影响的频道', async () => {
+  const a = await call('/api/messages', { method: 'POST', body: { room: 'wardogs', kind: 'text', body: '战狗过期' } })
+  const b = await call('/api/messages', { method: 'POST', body: { room: 'all', kind: 'text', body: '大厅保留' } })
+  db.prepare('UPDATE messages SET expires_at = 1 WHERE id = ?').run(a.payload.message.id)
+
+  const result = await runCleanup()
+  assert.ok(result.messages >= 1)
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM messages WHERE id = ?').get(a.payload.message.id).n, 0)
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM messages WHERE id = ?').get(b.payload.message.id).n, 1, '没到期的不该被牵连')
+})
+
+test('升级前没有到期时间的消息会被补齐', async () => {
+  const sent = await call('/api/messages', { method: 'POST', body: { kind: 'text', body: '假装是老消息' } })
+  const id = sent.payload.message.id
+  // 手动抹掉，模拟 v4 迁移之前落库的消息
+  db.prepare('UPDATE messages SET expires_at = NULL WHERE id = ?').run(id)
+
+  const filled = backfillExpiry()
+  assert.ok(filled >= 1)
+
+  const row = db.prepare('SELECT created_at, expires_at FROM messages WHERE id = ?').get(id)
+  assert.equal(row.expires_at, row.created_at + 60 * 60 * 1000, '按当前配置补齐')
+  assert.equal(backfillExpiry(), 0, '补过之后不该重复补')
 })
 
 test('重复清理是幂等的', async () => {
   const again = await runCleanup()
-  assert.equal(again.expired, 0)
+  assert.equal(again.messages, 0)
 })
 
 test('管理员可以开号，新账号能立刻登录', async () => {

@@ -45,7 +45,7 @@ server.listen(config.port, config.host, () => {
   console.log('[gmap] 已启动，浏览器打开：')
   for (const [label, url] of accessUrls()) console.log(`[gmap]   ${label}  ${url}`)
   console.log(`[gmap] 上传目录 ${config.uploadDir}`)
-  console.log(`[gmap] 文件保留 ${config.fileRetentionHours} 小时，每 ${config.cleanupIntervalMinutes} 分钟清理一次`)
+  console.log(`[gmap] 消息与附件保留 ${config.retentionHours} 小时，每 ${config.cleanupIntervalMinutes} 分钟清理一次`)
 })
 
 let shuttingDown = false

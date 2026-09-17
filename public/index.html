@@ -11,6 +11,8 @@
 </head>
 <body>
   <div class="deck">
+    <nav class="games" id="games" aria-label="频道"></nav>
+
     <aside class="rail" id="rail">
       <div class="rail-plate">
         <span class="wordmark">GMAP</span>
@@ -48,7 +50,8 @@
         <button class="bare only-narrow" id="btn-rail" aria-label="展开侧栏">
           <svg class="icon" aria-hidden="true"><use href="/vendor/icons.svg#i-list"></use></svg>
         </button>
-        <span class="channel">大厅</span>
+        <span class="channel" id="room-name">全部</span>
+        <span class="room-hint" id="room-hint"></span>
         <span class="spacer"></span>
 
         <span id="radar-slot"></span>

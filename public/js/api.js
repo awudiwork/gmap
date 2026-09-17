@@ -52,14 +52,17 @@ export const api = {
   register: (payload) => post('/api/auth/register', payload),
   logout: () => post('/api/auth/logout'),
 
-  messages: ({ before, limit } = {}) => {
+  rooms: () => get('/api/rooms'),
+
+  messages: ({ room, before, limit } = {}) => {
     const query = new URLSearchParams()
+    if (room) query.set('room', room)
     if (before) query.set('before', String(before))
     if (limit) query.set('limit', String(limit))
     const suffix = query.toString()
     return get(`/api/messages${suffix ? `?${suffix}` : ''}`)
   },
-  sendText: ({ kind, body, lang }) => post('/api/messages', { kind, body, lang }),
+  sendText: ({ room, kind, body, lang }) => post('/api/messages', { room, kind, body, lang }),
 
   /** 改自己的昵称和/或密码；改密码需同时给 currentPassword 与 newPassword */
   updateProfile: (payload) => patch('/api/auth/me', payload),
@@ -77,11 +80,12 @@ export const api = {
    * 上传文件。用 XHR 而非 fetch，因为需要上传进度回调。
    * @returns {Promise<object>} 后端返回的 { message, file }
    */
-  upload({ file, caption = '', onProgress }) {
+  upload({ file, caption = '', room, onProgress }) {
     return new Promise((resolve, reject) => {
       const form = new FormData()
       form.append('file', file, file.name || 'upload')
       if (caption) form.append('caption', caption)
+      if (room) form.append('room', room)
 
       const xhr = new XMLHttpRequest()
       xhr.open('POST', '/api/upload')

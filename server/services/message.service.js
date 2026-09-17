@@ -7,7 +7,9 @@
  *  - 附件形态不在这里重新拼装，一律复用 file.service.fileDto，保持单一事实来源。
  */
 import { db } from '../db.js'
+import { config } from '../config.js'
 import { badRequest } from '../lib/errors.js'
+import { normalizeRoom } from '../lib/rooms.js'
 import { fileDto, getFile } from './file.service.js'
 
 export const MESSAGE_KINDS = Object.freeze(['text', 'code', 'file'])
@@ -18,25 +20,26 @@ const MAX_CODE_LENGTH = 20000
 const LANG_PATTERN = /^[a-zA-Z0-9+#._-]{1,24}$/
 
 const insertMessage = db.prepare(`
-  INSERT INTO messages (user_id, kind, body, lang, file_id, source, created_at)
-  VALUES (@userId, @kind, @body, @lang, @fileId, @source, @createdAt)
+  INSERT INTO messages (room, user_id, kind, body, lang, file_id, source, created_at, expires_at)
+  VALUES (@room, @userId, @kind, @body, @lang, @fileId, @source, @createdAt, @expiresAt)
 `)
 
 const SELECT_BASE = `
-  SELECT m.id, m.kind, m.body, m.lang, m.file_id, m.source, m.created_at,
+  SELECT m.id, m.room, m.kind, m.body, m.lang, m.file_id, m.source, m.created_at,
          u.id AS author_id, u.display_name AS author_name
   FROM messages m
   JOIN users u ON u.id = m.user_id
 `
 
 const selectById = db.prepare(`${SELECT_BASE} WHERE m.id = ?`)
-const selectLatest = db.prepare(`${SELECT_BASE} ORDER BY m.id DESC LIMIT ?`)
-const selectBefore = db.prepare(`${SELECT_BASE} WHERE m.id < ? ORDER BY m.id DESC LIMIT ?`)
+const selectLatest = db.prepare(`${SELECT_BASE} WHERE m.room = ? ORDER BY m.id DESC LIMIT ?`)
+const selectBefore = db.prepare(`${SELECT_BASE} WHERE m.room = ? AND m.id < ? ORDER BY m.id DESC LIMIT ?`)
 
 function toDto(row) {
   if (!row) return null
   return {
     id: row.id,
+    room: row.room,
     kind: row.kind,
     body: row.body,
     lang: row.lang,
@@ -52,28 +55,33 @@ export function getMessage(id) {
 }
 
 /**
- * 读取历史消息。
- * @param {{ limit: number, before?: number|null }} params before 为消息 id，用于向上翻页
+ * 读取某个房间的历史消息。
+ * @param {{ room: string, limit: number, before?: number|null }} params before 为消息 id，用于向上翻页
  * @returns 按时间正序排列的消息 DTO 数组
  */
-export function listMessages({ limit, before = null }) {
+export function listMessages({ room, limit, before = null }) {
   const size = Math.min(Math.max(Number(limit) || 0, 1), 200)
-  const rows = before ? selectBefore.all(before, size) : selectLatest.all(size)
+  const target = normalizeRoom(room)
+  const rows = before ? selectBefore.all(target, before, size) : selectLatest.all(target, size)
   return rows.reverse().map(toDto)
 }
 
-function persist({ userId, kind, body, lang, fileId, source }) {
+function persist({ room, userId, kind, body, lang, fileId, source }) {
   if (!MESSAGE_SOURCES.includes(source)) {
     throw badRequest('invalid_source', '未知的消息来源')
   }
+  // 到期时间在落库这一刻算好，之后改配置只影响新消息
+  const createdAt = Date.now()
   const result = insertMessage.run({
+    room: normalizeRoom(room),
     userId,
     kind,
     body: body ?? null,
     lang: lang ?? null,
     fileId: fileId ?? null,
     source,
-    createdAt: Date.now(),
+    createdAt,
+    expiresAt: createdAt + config.retentionHours * 60 * 60 * 1000,
   })
   return getMessage(result.lastInsertRowid)
 }
@@ -82,7 +90,7 @@ function persist({ userId, kind, body, lang, fileId, source }) {
  * 发送文字或代码块消息。
  * @throws AppError 内容为空、超长、语言标记非法（400）
  */
-export function createTextMessage({ userId, kind, body, lang, source = 'web' }) {
+export function createTextMessage({ room, userId, kind, body, lang, source = 'web' }) {
   if (kind !== 'text' && kind !== 'code') {
     throw badRequest('invalid_kind', '只支持 text 或 code')
   }
@@ -104,7 +112,7 @@ export function createTextMessage({ userId, kind, body, lang, source = 'web' }) 
       language = raw.toLowerCase()
     }
   }
-  return persist({ userId, kind, body: content, lang: language, fileId: null, source })
+  return persist({ room, userId, kind, body: content, lang: language, fileId: null, source })
 }
 
 /**
@@ -112,10 +120,10 @@ export function createTextMessage({ userId, kind, body, lang, source = 'web' }) 
  * @param {{ userId: number, fileId: number, caption?: string, source?: string }} params
  * @throws AppError 说明文字超长（400）
  */
-export function createFileMessage({ userId, fileId, caption = '', source = 'web' }) {
+export function createFileMessage({ room, userId, fileId, caption = '', source = 'web' }) {
   const text = String(caption ?? '').trim()
   if (text.length > MAX_TEXT_LENGTH) {
     throw badRequest('body_too_long', `说明文字最长 ${MAX_TEXT_LENGTH} 个字符`)
   }
-  return persist({ userId, kind: 'file', body: text || null, lang: null, fileId, source })
+  return persist({ room, userId, kind: 'file', body: text || null, lang: null, fileId, source })
 }

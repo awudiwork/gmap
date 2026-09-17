@@ -123,18 +123,22 @@ export const settings = {
 /**
  * 判断一条消息该不该触发自动展开。纯函数，config 由调用方传入，便于直接测。
  *
- * 五条规则，全部成立才展开（任何一条不满足就不弹）：
- *  1. 总开关得开着。
- *  2. 得是一张带得出地址的图片。
- *  3. 来源过滤：默认只认带 Key 推来的图，网页里发的表情包不该打断你。
- *  4. 自己发的分两种：网页里手动发的**永远**不弹，刚拖进去就在眼前；
+ * 六条规则，全部成立才展开（任何一条不满足就不弹）：
+ *  1. 得是当前所在频道的消息。切频道的意思就是"我现在只关心这个"，
+ *     别的频道有新图时只在频道栏上点个未读，不该抢过来占满屏幕。
+ *  2. 总开关得开着。
+ *  3. 得是一张带得出地址的图片。
+ *  4. 来源过滤：默认只认带 Key 推来的图，网页里发的表情包不该打断你。
+ *  5. 自己发的分两种：网页里手动发的**永远**不弹，刚拖进去就在眼前；
  *     从客户端推的由开关决定，因为"游戏机推给第二屏"是一个人的正常用法，
  *     两边是同一个账号。
- *  5. 被单独关掉的人不弹。
+ *  6. 被单独关掉的人不弹。
  *
- * @param {{ message: object, meId: number, config: object }} input
+ * @param {{ message: object, meId: number, config: object, currentRoom?: string }} input
+ *        currentRoom 省略时不做频道判断，便于单独测其它规则
  */
-export function decideAutoOpen({ message, meId, config }) {
+export function decideAutoOpen({ message, meId, config, currentRoom }) {
+  if (currentRoom !== undefined && message.room !== currentRoom) return false
   if (!config.autoOpenImages) return false
   if (message.kind !== 'file' || message.file?.category !== 'image' || !message.file?.url) return false
   if (config.autoOpenSource === 'api' && message.source !== 'api') return false
@@ -150,8 +154,8 @@ export function decideAutoOpen({ message, meId, config }) {
 }
 
 /** 取当前设置做一次判断 */
-export function shouldAutoOpen(message, meId) {
-  return decideAutoOpen({ message, meId, config: settings.get() })
+export function shouldAutoOpen(message, meId, currentRoom) {
+  return decideAutoOpen({ message, meId, currentRoom, config: settings.get() })
 }
 
 /** 这个人推的图还会不会自动展开 */

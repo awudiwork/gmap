@@ -46,7 +46,7 @@ authRouter.get('/config', (_req, res) => {
     ok: true,
     allowRegistration: config.allowRegistration,
     requiresCode: config.registrationCode !== '',
-    fileRetentionHours: config.fileRetentionHours,
+    retentionHours: config.retentionHours,
     maxUploadMb: Math.round(config.maxUploadBytes / 1024 / 1024),
   })
 })

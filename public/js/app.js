@@ -4,11 +4,12 @@
  */
 import { api, ApiError } from './api.js'
 import { connectRealtime } from './ws-client.js'
-import { buildDayMark, markExpired, renderRow, viewerItem } from './render.js'
+import { buildDayMark, dropMessages, renderRow, viewerItem } from './render.js'
 import { show as showViewer } from './viewer.js'
 import { isMuted, playBeep, refreshMutedNames, settings, shouldAutoOpen, toggleMute } from './settings.js'
 import { initCommand } from './composer.js'
 import { openKeys, openProfile, openSettings, openUsers } from './panels.js'
+import { mountGames, readLastRoom } from './rooms.js'
 import { avatarInk, avatarLetter, dayKey, el, icon, toast, toggle } from './ui.js'
 
 /** 距底部小于这个距离就认为在看最新，新消息自动跟随 */
@@ -31,7 +32,22 @@ const state = {
   oldestId: null,
   hasMore: true,
   loadingMore: false,
+  retentionHours: 12,
+  room: 'all',
+  rooms: [],
 }
+
+/** 频道栏的句柄，切换和未读标记都走它 */
+let games = null
+
+/**
+ * 每次切换频道自增。飞在路上的请求回来时用它对一下，
+ * 不属于当前这一轮的结果一律作废。
+ *
+ * 光比对 state.room 不够：A 切到 B 再切回 A 时，A 的那个旧请求会误以为自己还作数，
+ * 把过期的历史插进新的流里。
+ */
+let generation = 0
 
 const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < STICK_PX
 const toBottom = () => { log.scrollTop = log.scrollHeight }
@@ -57,12 +73,17 @@ function showSkeleton(count = 6) {
   }
 }
 
+/** 顶部提示：房间是个滚动窗口，说清更早的东西为什么不在了 */
+function buildRetentionNote() {
+  return el('div', 'retention-note', `只保留最近 ${state.retentionHours} 小时的消息，更早的已被清除`)
+}
+
 /** 空频道：说清这里会出现什么，并给出下一步 */
 function showEmpty({ onKeys }) {
   logInner.replaceChildren()
   const box = el('div', 'log-void')
   box.append(el('div', 'head', '频道里还没有东西'))
-  box.append(el('p', null, '用截图客户端推一张地图上来，或者把图片拖进这个窗口。房间里的其他人会立刻看到。'))
+  box.append(el('p', null, `用截图客户端推一张地图上来，或者把图片拖进这个窗口。房间里的其他人会立刻看到。消息和附件保留 ${state.retentionHours} 小时，到点自动清除。`))
   const acts = el('div', 'acts')
   const keyBtn = el('button', 'key')
   keyBtn.append(icon('plus'), el('span', null, '生成上传 Key'))
@@ -86,8 +107,9 @@ function showLoadError(message) {
   logInner.append(box)
 }
 
+/** 只摘掉占位元素，别把顶部的保留期提示一起清了 */
 const clearPlaceholder = () => {
-  if (logInner.querySelector('.log-void, .sk-row')) logInner.replaceChildren()
+  for (const node of logInner.querySelectorAll('.log-void, .sk-row')) node.remove()
 }
 
 /** 追加一行到底部，跨天时先插日期标记 */
@@ -123,8 +145,10 @@ function prependRows(messages) {
   // 这批的最后一条若和原本最早那条是同一天，原来那条分隔线就多余了，
   // 不处理的话向上翻历史会看到两个"今天"
   const seam = logInner.querySelector('.day-mark')
+  // 保留期提示始终钉在最顶上，补进来的历史插在它后面
+  const note = logInner.querySelector('.retention-note')
   const before = log.scrollHeight
-  logInner.insertBefore(fragment, logInner.firstChild)
+  logInner.insertBefore(fragment, note ? note.nextSibling : logInner.firstChild)
   if (seam && seam.dataset.day === day) seam.remove()
   log.scrollTop += log.scrollHeight - before
 }
@@ -203,6 +227,12 @@ settings.subscribe((config) => {
 })
 
 function handleIncoming(message) {
+  // 别的频道来的消息不进当前这条流，只在频道栏上点个未读
+  if (message.room !== state.room) {
+    games?.mark(message.room)
+    return
+  }
+
   const stick = atBottom()
   appendRow(message, { fresh: true })
 
@@ -213,7 +243,7 @@ function handleIncoming(message) {
     tailHint.classList.remove('hidden')
   }
 
-  if (shouldAutoOpen(message, state.me.id)) {
+  if (shouldAutoOpen(message, state.me.id, state.room)) {
     showViewer(viewerItem(message))
     if (settings.get().sound) playBeep()
   }
@@ -228,9 +258,24 @@ function handleEvent(event) {
     case 'message':
       handleIncoming(event.data)
       break
-    case 'files_expired':
-      markExpired(event.data.fileIds)
+    case 'messages_expired': {
+      // 别的频道过期的消息本来就不在这条流里，但它可能正是点亮未读标记的那一条，
+      // 标记留着会让人切过去扑空。可能误清掉同频道其它未读，
+      // 不过下一条新消息就会把它重新点亮，比一直亮着强
+      for (const room of event.data.rooms ?? []) {
+        if (room !== state.room) games?.clearMark(room)
+      }
+
+      const removed = dropMessages(event.data.ids)
+      if (removed === 0) break
+      // 被删的可能正是分组的基准，重置一下，免得下一条消息跟一条已经不在的消息并组
+      state.last = null
+      if (!logInner.querySelector('.turn')) {
+        state.lastDay = null
+        showEmpty({ onKeys: openKeys })
+      }
       break
+    }
     default:
       break
   }
@@ -251,8 +296,10 @@ function setLinkState(status) {
 async function loadMore() {
   if (state.loadingMore || !state.hasMore || !state.oldestId) return
   state.loadingMore = true
+  const gen = generation
   try {
-    const { messages } = await api.messages({ before: state.oldestId, limit: 50 })
+    const { messages } = await api.messages({ room: state.room, before: state.oldestId, limit: 50 })
+    if (gen !== generation) return
     if (messages.length === 0) {
       state.hasMore = false
       return
@@ -260,9 +307,46 @@ async function loadMore() {
     state.oldestId = messages[0].id
     prependRows(messages)
   } catch (err) {
-    toast(err instanceof ApiError ? err.message : '读取历史失败', 'bad')
+    if (gen === generation) toast(err instanceof ApiError ? err.message : '读取历史失败', 'bad')
   } finally {
-    state.loadingMore = false
+    // 只在还属于这一轮时才解锁，否则会把新频道刚上的锁给解了，放行一次重复加载
+    if (gen === generation) state.loadingMore = false
+  }
+}
+
+/** 切换频道：清空这条流，重新拉这个房间的消息 */
+async function openRoom(id) {
+  const gen = ++generation
+  state.room = id
+  state.last = null
+  state.lastDay = null
+  state.oldestId = null
+  state.hasMore = true
+  state.loadingMore = false
+
+  const room = state.rooms.find((item) => item.id === id)
+  document.getElementById('room-name').textContent = room?.name ?? id
+  document.getElementById('room-hint').textContent = room?.hint ?? ''
+  games?.setCurrent(id)
+  tailHint.classList.add('hidden')
+
+  showSkeleton()
+  try {
+    const { messages } = await api.messages({ room: id })
+    // 拉的过程中又切走了，结果作废
+    if (gen !== generation) return
+    if (messages.length > 0) {
+      state.oldestId = messages[0].id
+      logInner.replaceChildren(buildRetentionNote())
+      for (const message of messages) appendRow(message)
+      toBottom()
+    } else {
+      state.hasMore = false
+      showEmpty({ onKeys: openKeys })
+    }
+  } catch (err) {
+    if (gen !== generation) return
+    showLoadError(err instanceof ApiError ? err.message : '连不上服务端，检查网络后重新加载。')
   }
 }
 
@@ -295,7 +379,10 @@ function mountRadar() {
 async function boot() {
   let me = null
   try {
-    ({ user: me } = await api.me())
+    // 顺带取一次服务端配置，顶部提示要用到保留期
+    const [who, config] = await Promise.all([api.me(), api.authConfig()])
+    me = who.user
+    if (Number.isFinite(config?.retentionHours)) state.retentionHours = config.retentionHours
   } catch {
     location.replace('/login.html')
     return
@@ -330,10 +417,16 @@ async function boot() {
   })
 
   // 窄屏下侧栏收成抽屉
+  const gamesRail = document.getElementById('games')
   const slideRail = (out) => {
     rail.classList.toggle('out', out)
+    gamesRail.classList.toggle('out', out)
     railVeil.classList.toggle('hidden', !out)
   }
+  // 频道栏在抽屉里，点一个频道就该收起来看内容
+  gamesRail.addEventListener('click', (event) => {
+    if (event.target.closest('button')) slideRail(false)
+  })
   document.getElementById('btn-rail').addEventListener('click', () => slideRail(true))
   railVeil.addEventListener('click', () => slideRail(false))
   rail.addEventListener('click', (event) => {
@@ -343,23 +436,27 @@ async function boot() {
     if (event.target.closest('button')) slideRail(false)
   })
 
-  showSkeleton()
+  // 频道栏要先立起来，openRoom 要用它
   try {
-    const { messages } = await api.messages({})
-    if (messages.length > 0) {
-      state.oldestId = messages[0].id
-      logInner.replaceChildren()
-      for (const message of messages) appendRow(message)
-      toBottom()
-    } else {
-      state.hasMore = false
-      showEmpty({ onKeys: openKeys })
-    }
+    const { rooms, defaultRoom } = await api.rooms()
+    state.rooms = rooms
+    // 上次待的频道可能已经从清单里撤掉了，那就回到默认频道
+    const saved = readLastRoom(defaultRoom)
+    state.room = rooms.some((item) => item.id === saved) ? saved : defaultRoom
+    games = mountGames({
+      host: document.getElementById('games'),
+      rooms,
+      current: state.room,
+      onPick: openRoom,
+    })
   } catch (err) {
-    showLoadError(err instanceof ApiError ? err.message : '连不上服务端，检查网络后重新加载。')
+    showLoadError(err instanceof ApiError ? err.message : '读不到频道列表，刷新试试。')
+    return
   }
 
-  initCommand()
+  await openRoom(state.room)
+
+  initCommand(() => state.room)
   connectRealtime({ onEvent: handleEvent, onStatus: setLinkState })
 
   log.addEventListener('scroll', () => {

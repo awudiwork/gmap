@@ -90,6 +90,27 @@ const MIGRATIONS = [
   DELETE FROM api_keys WHERE revoked_at IS NOT NULL;
   ALTER TABLE api_keys DROP COLUMN revoked_at;
   `,
+
+  // v4：消息也有保留期，房间变成一个滚动窗口。
+  // 到期时间在落库那一刻算好，之后改配置只影响新消息，
+  // 不会让人把保留期调短之后眼睁睁看着历史当场蒸发。
+  // 存量消息的 expires_at 是 NULL，清理时按"创建时间 + 当前配置"兜底。
+  // 同时清掉 files.deleted_at：文件不再"标记删除后留档"，它跟着消息一起物理消失，
+  // 那一列从此永远是 NULL。索引引用着它，得先删索引。
+  `
+  ALTER TABLE messages ADD COLUMN expires_at INTEGER;
+  CREATE INDEX idx_messages_expires ON messages(expires_at);
+  DROP INDEX idx_files_pending_cleanup;
+  DELETE FROM files WHERE deleted_at IS NOT NULL;
+  ALTER TABLE files DROP COLUMN deleted_at;
+  `,
+
+  // v5：消息按游戏分房间。存量消息落到 all，那本来就是它们的去处。
+  // 索引带上 id DESC，因为读取永远是"某个房间的最近 N 条"。
+  `
+  ALTER TABLE messages ADD COLUMN room TEXT NOT NULL DEFAULT 'all';
+  CREATE INDEX idx_messages_room ON messages(room, id DESC);
+  `,
 ]
 
 function migrate() {

@@ -15,6 +15,22 @@ dotenv.config()
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
+/**
+ * 已经改名的配置项。留着旧名默默用默认值，比起不了服务更糟：
+ * 保留期会悄悄变回 12 小时，而且没有任何迹象。
+ */
+const RENAMED = {
+  FILE_RETENTION_HOURS: 'RETENTION_HOURS',
+}
+
+for (const [oldName, newName] of Object.entries(RENAMED)) {
+  if (process.env[oldName] !== undefined && process.env[newName] === undefined) {
+    throw new Error(
+      `配置 ${oldName} 已更名为 ${newName}（它现在同时管消息和附件），请修改 .env 后重新启动`,
+    )
+  }
+}
+
 /** 读取整数配置，越界或非数字直接抛错 */
 function readInt(name, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
   const raw = process.env[name]
@@ -54,7 +70,8 @@ export const config = Object.freeze({
   dataDir: readPath('DATA_DIR', './data'),
   uploadDir: readPath('UPLOAD_DIR', './uploads'),
 
-  fileRetentionHours: readInt('FILE_RETENTION_HOURS', 12, { min: 1, max: 24 * 365 }),
+  // 保留期管的是房间里的一切：消息、代码块、附件
+  retentionHours: readInt('RETENTION_HOURS', 12, { min: 1, max: 24 * 365 }),
   cleanupIntervalMinutes: readInt('CLEANUP_INTERVAL_MINUTES', 10, { min: 1, max: 1440 }),
   maxUploadBytes: readInt('MAX_UPLOAD_MB', 25, { min: 1, max: 2048 }) * 1024 * 1024,
 
@@ -69,4 +86,6 @@ export const config = Object.freeze({
   adminPassword: readString('ADMIN_PASSWORD', ''),
 
   uploadRatePerMinute: readInt('UPLOAD_RATE_PER_MINUTE', 30, { min: 1, max: 6000 }),
+  // 两次上传之间的最小间隔，挡住热键连按。0 表示不限
+  uploadMinIntervalMs: readInt('UPLOAD_MIN_INTERVAL_MS', 1000, { min: 0, max: 60_000 }),
 })
