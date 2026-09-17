@@ -7,7 +7,7 @@
  *     游戏地图每次截图画幅一样，你放大盯着某个角落时新的一张会在同一视角刷新，
  *     那才叫同步，而不是"又弹了一张图"。
  */
-import { el, icon } from './ui.js'
+import { el, formatAge, icon } from './ui.js'
 import { settings } from './settings.js'
 import { anchorOf, clampOrigin, fitView, originFor, zoomAround } from './viewport.js'
 
@@ -25,6 +25,10 @@ const state = {
   titleNode: null,
   subNode: null,
   zoomNode: null,
+  /** 顶栏正中的"多久前推送"，每秒刷新 */
+  ageNode: null,
+  createdAt: 0,
+  ageTimer: null,
   openRaw: null,
   /** 最近一次发出的图片探针，旧探针的回调按它判断是否作废 */
   probe: null,
@@ -145,6 +149,8 @@ function build() {
   meta.append(title, sub)
 
   const zoom = el('span', 'zoom')
+  // 绝对定位在顶栏正中，不参与两侧控件的排布
+  const age = el('div', 'age')
 
   const fitBtn = el('button')
   fitBtn.append(icon('corners-out'), el('span', null, '适应窗口'))
@@ -214,7 +220,7 @@ function build() {
   closeBtn.title = '关闭，Esc 同样生效'
   closeBtn.setAttribute('aria-label', '关闭')
 
-  bar.append(meta, el('span', 'spacer'), zoom, rememberBtn, centerBtn, ownBtn, fitBtn, oneToOne, openRaw, closeBtn)
+  bar.append(meta, el('span', 'spacer'), zoom, rememberBtn, centerBtn, ownBtn, fitBtn, oneToOne, openRaw, closeBtn, age)
 
   const foot = el('div', 'viewer-foot')
   foot.append(
@@ -225,7 +231,7 @@ function build() {
 
   root.append(stage, bar, foot)
 
-  Object.assign(state, { root, stage, img, titleNode: title, subNode: sub, zoomNode: zoom, openRaw })
+  Object.assign(state, { root, stage, img, titleNode: title, subNode: sub, zoomNode: zoom, ageNode: age, openRaw })
 
   fitBtn.addEventListener('click', fitStage)
   oneToOne.addEventListener('click', () => {
@@ -300,6 +306,11 @@ function onKeyDown(event) {
   if (event.key === 'Escape') close()
 }
 
+function paintAge() {
+  if (!isOpen()) return
+  state.ageNode.textContent = state.createdAt ? `${formatAge(state.createdAt)}推送` : ''
+}
+
 function onResize() {
   if (isOpen()) fitStage()
 }
@@ -313,6 +324,8 @@ function load(item, keepView) {
   state.titleNode.textContent = item.title
   state.subNode.textContent = item.sub
   state.openRaw.href = item.url
+  state.createdAt = item.createdAt ?? 0
+  paintAge()
 
   // 两张图连着到时，慢的那张可能后回调，把画面换回旧图而标题已经是新图的。
   // 记下这次请求，回调时不是最近一次就丢弃
@@ -348,6 +361,7 @@ export function show(item) {
   document.addEventListener('keydown', onKeyDown)
   window.addEventListener('resize', onResize)
   state.natural = { width: 0, height: 0 }
+  state.ageTimer = setInterval(paintAge, 1000)
   load(item, false)
 }
 
@@ -362,6 +376,8 @@ export function close() {
 
   state.unsubscribe?.()
   state.unsubscribe = null
+  clearInterval(state.ageTimer)
+  state.ageTimer = null
   state.root.remove()
   document.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('resize', onResize)

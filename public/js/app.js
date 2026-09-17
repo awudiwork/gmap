@@ -60,6 +60,24 @@ let generation = 0
 const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < STICK_PX
 const toBottom = () => { log.scrollTop = log.scrollHeight }
 
+/**
+ * 是否贴着底部。由滚动事件维护，而不是每次用到时现算：
+ * 新消息插进来的瞬间 scrollHeight 已经变了，现算会把"本来贴着底"误判成"没贴着"。
+ */
+let stuck = true
+/** 不在底部时攒下的新消息数，回到底部才清零 */
+let unseen = 0
+
+function paintTail() {
+  tailHint.classList.toggle('hidden', unseen === 0)
+  document.getElementById('btn-tail-count').textContent = unseen > 0 ? `${unseen} 条新消息` : ''
+}
+
+function markSeen() {
+  unseen = 0
+  paintTail()
+}
+
 /** 加载骨架：形状和位置照抄气泡，加载完成时不会有跳动 */
 function showSkeleton(count = 6) {
   const shape = [
@@ -255,14 +273,14 @@ function handleIncoming(message) {
     return
   }
 
-  const stick = atBottom()
   if (!appendRow(message, { fresh: true })) return
 
-  if (stick) {
+  if (stuck) {
+    // 图片会在之后才撑开高度，ResizeObserver 会再补一次滚动
     toBottom()
-    tailHint.classList.add('hidden')
   } else {
-    tailHint.classList.remove('hidden')
+    unseen += 1
+    paintTail()
   }
 
   if (shouldAutoOpen(message, state.me.id, state.room)) {
@@ -384,7 +402,8 @@ async function openRoom(id) {
   // 频道专属工具挂在标题右边，换频道就换一套
   mountTools(document.getElementById('room-tools'), room)
   games?.setCurrent(id)
-  tailHint.classList.add('hidden')
+  markSeen()
+  stuck = true
 
   showSkeleton()
   try {
@@ -529,12 +548,20 @@ async function boot() {
 
   log.addEventListener('scroll', () => {
     if (log.scrollTop < 120) loadMore()
-    if (atBottom()) tailHint.classList.add('hidden')
+    stuck = atBottom()
+    if (stuck) markSeen()
   })
 
+  // 内容区一长高（图片加载完、字体换了、窗口变了）就把贴底状态维持住。
+  // 只滚一次不够：消息插进来时先滚到底，图片随后才撑开高度，视口就又不在底部了
+  new ResizeObserver(() => {
+    if (stuck) toBottom()
+  }).observe(logInner)
+
   document.getElementById('btn-tail').addEventListener('click', () => {
+    stuck = true
     toBottom()
-    tailHint.classList.add('hidden')
+    markSeen()
   })
 }
 

@@ -99,6 +99,7 @@ export function viewerItem(message) {
     url: message.file.url,
     title: message.file.name,
     sub: `${message.user.name} 在 ${formatStamp(message.createdAt)} 经 ${via} 推送`,
+    createdAt: message.createdAt,
   }
 }
 

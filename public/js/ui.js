@@ -65,6 +65,23 @@ export function formatDateTime(ms) {
 }
 
 /**
+ * 距现在过了多久，给看图器顶栏用：一张地图是"刚推的"还是"半小时前的"，
+ * 比绝对时刻更直接。纯函数，now 可传入便于测试。
+ */
+export function formatAge(ms, now = Date.now()) {
+  const seconds = Math.max(0, Math.floor((now - ms) / 1000))
+  if (seconds < 60) return `${seconds} 秒前`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  const restMinutes = minutes % 60
+  if (hours < 24) return restMinutes ? `${hours} 小时 ${restMinutes} 分前` : `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  const restHours = hours % 24
+  return restHours ? `${days} 天 ${restHours} 小时前` : `${days} 天前`
+}
+
+/**
  * 头像底色板。刻意不做全色相随机：满屏高饱和头像会把唯一的琥珀强调色淹掉。
  * 这六个都压在 45% 以下的饱和度、35% 以下的亮度，彼此能分辨，
  * 但都退到界面后面，白字压上去也够清楚。

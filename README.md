@@ -163,8 +163,9 @@ Content-Type: multipart/form-data
 | 413 | `file_too_large` | 超过 `MAX_UPLOAD_MB` |
 | 429 | `upload_rate_limited` | 超过 `UPLOAD_RATE_PER_MINUTE`，响应里有建议等待秒数 |
 
-两种限额都按 Key 各算各的，不是全站共享。**Key 只能推图**：`POST /api/messages`（文字 / 代码）只对网页登录会话开放，
-拿 Key 调它是 `401 not_logged_in`。一枚泄露的 Key 能做的事只剩上传，而上传有节流和配额挡着。
+两种限额都按 Key 各算各的，不是全站共享。**Key 只能走上传接口**：图片连同 `caption` 说明文字一起推没问题，
+但 `POST /api/messages`（单独发一条文字 / 代码）只对网页登录会话开放，拿 Key 调它是 `401 not_logged_in`。
+一枚泄露的 Key 能做的事只剩上传，而上传有节流和配额挡着。
 
 ### 4. 示例
 

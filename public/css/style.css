@@ -554,6 +554,8 @@ code.tick {
 
 .tail-hint { position: sticky; bottom: 6px; display: flex; justify-content: center; pointer-events: none; z-index: 3; }
 .tail-hint button { pointer-events: auto; background: var(--amber); border-color: var(--amber); color: var(--void); font-weight: 700; }
+.tail-hint button span:empty { display: none; }
+.tail-hint button span { font-weight: 500; opacity: 0.8; }
 .tail-hint button:hover:not(:disabled) { background: var(--amber-lit); border-color: var(--amber-lit); color: var(--void); }
 
 /* ── 高度拖拽条 ─────────────────────────────────────────
@@ -807,6 +809,14 @@ code.tick {
 .viewer-bar .title { font-size: 12px; font-weight: 500; }
 .viewer-bar .sub { font-size: 11px; color: var(--mid); }
 .viewer-bar .zoom { font-size: 11px; color: var(--amber); font-variant-numeric: tabular-nums; min-width: 48px; text-align: right; }
+/* 这张图是多久前推的。放正中，不挤两侧的控件 */
+.viewer-bar .age {
+  position: absolute; left: 50%; top: 14px;
+  transform: translateX(-50%);
+  font-size: 12px; font-weight: 500; color: var(--amber);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  pointer-events: none;
+}
 .viewer-bar a.act {
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--groove); background: var(--panel);
@@ -884,7 +894,7 @@ code.tick {
   .command-tools .hint { display: none; }
   .viewer-foot { display: none; }
   /* 窄屏优先保住三个开关和关闭键，次要动作让位 */
-  .viewer-bar .title, .viewer-bar .sub { display: none; }
+  .viewer-bar .title, .viewer-bar .sub, .viewer-bar .age { display: none; }
   .viewer-bar a.act { display: none; }
   .viewer-bar button.sw { padding: 8px 9px; }
   .bar { padding: 0 12px; gap: 10px; }
