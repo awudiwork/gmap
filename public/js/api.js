@@ -57,10 +57,12 @@ export const api = {
   /** Wardogs 伤害计算器的数据：弹道数值 + 武器图标与解锁等级 */
   wardogsBallistics: () => get('/api/wardogs/ballistics'),
 
-  messages: ({ room, before, limit } = {}) => {
+  /** before 向上翻历史；after 补拉比它新的（断线重连后用，0 表示从头） */
+  messages: ({ room, before, after, limit } = {}) => {
     const query = new URLSearchParams()
     if (room) query.set('room', room)
     if (before) query.set('before', String(before))
+    if (after !== undefined && after !== null) query.set('after', String(after))
     if (limit) query.set('limit', String(limit))
     const suffix = query.toString()
     return get(`/api/messages${suffix ? `?${suffix}` : ''}`)

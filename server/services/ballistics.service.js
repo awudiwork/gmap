@@ -23,7 +23,11 @@ const UPSTREAM_HEADERS = {
 const SNAPSHOT_DIR = path.join(config.root, 'server', 'assets', 'wardogs')
 const ICON_BASE = '/wardogs/icons'
 
-/** @type {{ ballistics: object, source: 'upstream' | 'snapshot', fetchedAt: number } | null} */
+/**
+ * source：upstream 刚从上游拉到；stale 上游暂时拉不到、沿用之前拉到的；snapshot 仓库快照。
+ * fetchedAt 是数据真正拿到的时刻，checkedAt 是上次尝试刷新的时刻，前端按 fetchedAt 提示新旧。
+ * @type {{ ballistics: object, source: 'upstream' | 'stale' | 'snapshot', fetchedAt: number, checkedAt: number } | null}
+ */
 let cache = null
 /** 同一时刻只让一个请求去拉上游，其余的等它 */
 let inflight = null
@@ -67,14 +71,15 @@ async function fetchUpstream() {
 const refreshMs = () => config.ballisticsRefreshHours * 60 * 60 * 1000
 /** 不联网时快照在进程生命周期内不会变，读过一次就一直用 */
 const isFresh = () => cache !== null
-  && (config.ballisticsRefreshHours === 0 || Date.now() - cache.fetchedAt < refreshMs())
+  && (config.ballisticsRefreshHours === 0 || Date.now() - cache.checkedAt < refreshMs())
 
 async function refresh() {
+  const now = Date.now()
   // 刷新周期为 0 表示不联网，只用仓库里的快照。测试和内网部署走这条
   if (config.ballisticsRefreshHours > 0) {
     try {
       const ballistics = await fetchUpstream()
-      cache = { ballistics, source: 'upstream', fetchedAt: Date.now() }
+      cache = { ballistics, source: 'upstream', fetchedAt: now, checkedAt: now }
       warnedUpstream = false
       return cache
     } catch (err) {
@@ -82,15 +87,15 @@ async function refresh() {
         console.warn(`[ballistics] 拉取上游失败，改用本地数据：${err.message}`)
         warnedUpstream = true
       }
-      // 之前拉到过就继续用旧的，比退回更老的快照强。往后推一个周期再试，
-      // 不然上游一挂每个请求都要等它超时
+      // 之前拉到过就继续用旧的，比退回更老的快照强；标成 stale 且不动 fetchedAt，
+      // 前端能如实说"上次更新是哪天"。往后推一个周期再试，不然上游一挂每个请求都要等它超时
       if (cache) {
-        cache = { ...cache, fetchedAt: Date.now() }
+        cache = { ...cache, source: 'stale', checkedAt: now }
         return cache
       }
     }
   }
-  cache = { ballistics: await readSnapshot(), source: 'snapshot', fetchedAt: Date.now() }
+  cache = { ballistics: await readSnapshot(), source: 'snapshot', fetchedAt: now, checkedAt: now }
   return cache
 }
 

@@ -66,7 +66,7 @@ export const armourShort = (name) => name.replace(/^Level (\d) (Armor|Helmet)$/,
 export { armourName }
 
 const TIER_LEVEL = { Light: 1, Medium: 2, Heavy: 3, SuperHeavy: 4 }
-export const tierLevel = (armour) => TIER_LEVEL[armour.tier.split('.').pop() ?? ''] ?? 0
+export const tierLevel = (armour) => TIER_LEVEL[String(armour.tier ?? '').split('.').pop()] ?? 0
 
 export function levelOf(data, armourId) {
   const armour = armourId ? data.armour.find((item) => item.id === armourId) : undefined
@@ -94,7 +94,7 @@ export function coveringArmour(data, engagement) {
   return [engagement.armour, engagement.helmet]
     .map((id) => (id ? data.armour.find((item) => item.id === id) : undefined))
     .filter((item) => !!item)
-    .find((item) => item.covers.includes(engagement.hit)) ?? null
+    .find((item) => (item.covers ?? []).includes(engagement.hit)) ?? null
 }
 
 /* ── 弹道 ─────────────────────────────────────────────── */
@@ -141,7 +141,8 @@ export function flightTimeMs(data, weapon, calibreKey, calibre, range) {
     tables = new Map()
     flightTables.set(data, tables)
   }
-  const key = `${weapon.id}|${calibreKey}`
+  // 全站都用 slug 认枪；上游偶尔漏掉 id，那时用 id 做键会让不同初速的枪共用一张表
+  const key = `${slugOf(weapon)}|${calibreKey}`
   let table = tables.get(key)
   if (!table) {
     const dragAt = (velocity) => {
@@ -231,7 +232,8 @@ export function solve(data, weapon, engagement, range = engagement.range) {
     }
   }
 
-  const reduction = Math.min(100, armour.reduction * combat.penScalar)
+  // 上游漏掉减伤字段时按 0 算，不然 NaN 会一路传到界面上
+  const reduction = Math.min(100, (Number.isFinite(armour.reduction) ? armour.reduction : 0) * combat.penScalar)
   const through = Math.max(0, raw * (combat.vsTier[armour.tier] ?? 1) * weaponMult * (1 - reduction / 100))
   const plateHit = base * falloff * (armour.slot === 'helmet' ? combat.plateHelmet : combat.plateArmor)
   const durability = Number.isFinite(armour.durability) ? armour.durability : Infinity

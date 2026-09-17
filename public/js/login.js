@@ -67,7 +67,7 @@ try {
   } else {
     requiresCode = config.requiresCode
 
-    document.getElementById('spec-retention').textContent = `${config.fileRetentionHours} 小时后清除`
+    document.getElementById('spec-retention').textContent = `${config.retentionHours} 小时后清除`
     document.getElementById('spec-access').textContent = config.allowRegistration
       ? (config.requiresCode ? '凭邀请码自助注册' : '开放自助注册')
       : '由管理员开号'

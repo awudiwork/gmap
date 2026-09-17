@@ -66,3 +66,13 @@ function shutdown(signal) {
 
 process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
+
+// 漏网的异常：记下现场再退出，交给 Docker / pm2 拉起。带病继续跑比重启更糟
+process.on('uncaughtException', (err) => {
+  console.error('[gmap] 未捕获的异常，进程退出', err)
+  process.exit(1)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[gmap] 未处理的 Promise 拒绝，进程退出', reason)
+  process.exit(1)
+})

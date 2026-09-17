@@ -7,7 +7,26 @@
 
 const ASCII = (text) => [...text].map((ch) => ch.charCodeAt(0))
 
-/** 每条规则：offset 起始处逐字节比对，null 表示该位任意 */
+/**
+ * EBML 头里的 DocType 元素（id 0x4282）在头部很靠前的位置，紧跟着长度和字符串。
+ * 在嗅探窗口内找到 42 82 <len> "webm" 就是 WebM。
+ */
+function hasWebmDocType(head) {
+  const marker = Buffer.from([0x42, 0x82])
+  let at = head.indexOf(marker, 4)
+  while (at !== -1) {
+    // 长度字节是 EBML 变长整数，DocType 的值很短，只会占一个字节（0x80 | 长度）
+    const size = head[at + 2]
+    if (size !== undefined && (size & 0x80) !== 0) {
+      const length = size & 0x7f
+      if (head.subarray(at + 3, at + 3 + length).toString('latin1') === 'webm') return true
+    }
+    at = head.indexOf(marker, at + 1)
+  }
+  return false
+}
+
+/** 每条规则：offset 起始处逐字节比对，null 表示该位任意；verify 是魔数之外的附加检查 */
 const SIGNATURES = [
   { mime: 'image/png', category: 'image', offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
   { mime: 'image/jpeg', category: 'image', offset: 0, bytes: [0xff, 0xd8, 0xff] },
@@ -17,7 +36,9 @@ const SIGNATURES = [
   { mime: 'image/avif', category: 'image', offset: 4, bytes: [...ASCII('ftyp'), ...ASCII('avif')] },
   { mime: 'image/vnd.microsoft.icon', category: 'image', offset: 0, bytes: [0x00, 0x00, 0x01, 0x00] },
 
-  { mime: 'video/webm', category: 'video', offset: 0, bytes: [0x1a, 0x45, 0xdf, 0xa3] },
+  // 0x1A45DFA3 是 EBML 通用头，WebM 和 MKV 都用它。只有 DocType 是 webm 的才认：
+  // MKV 浏览器同样放不了，识别成 video 只会渲染一个永远播不出来的 <video>
+  { mime: 'video/webm', category: 'video', offset: 0, bytes: [0x1a, 0x45, 0xdf, 0xa3], verify: hasWebmDocType },
   { mime: 'video/mp4', category: 'video', offset: 4, bytes: [...ASCII('ftyp'), ...ASCII('isom')] },
   { mime: 'video/mp4', category: 'video', offset: 4, bytes: [...ASCII('ftyp'), ...ASCII('mp4')] },
   { mime: 'video/mp4', category: 'video', offset: 4, bytes: [...ASCII('ftyp'), ...ASCII('M4V')] },
@@ -30,8 +51,8 @@ const SIGNATURES = [
   { mime: 'audio/wav', category: 'audio', offset: 0, bytes: [...ASCII('RIFF'), null, null, null, null, ...ASCII('WAVE')] },
 ]
 
-/** 嗅探需要的最小头部字节数 */
-export const SNIFF_LENGTH = 32
+/** 嗅探需要的最小头部字节数。要装得下 EBML 头里的 DocType */
+export const SNIFF_LENGTH = 64
 
 /**
  * 允许以原始 MIME 内联下发的类型。
@@ -56,7 +77,7 @@ function matches(head, rule) {
     if (expected === null) continue
     if (head[rule.offset + i] !== expected) return false
   }
-  return true
+  return rule.verify ? rule.verify(head) : true
 }
 
 /**

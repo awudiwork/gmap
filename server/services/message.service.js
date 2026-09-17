@@ -10,9 +10,8 @@ import { db } from '../db.js'
 import { config } from '../config.js'
 import { badRequest } from '../lib/errors.js'
 import { normalizeRoom } from '../lib/rooms.js'
-import { fileDto, getFile } from './file.service.js'
+import { fileDto } from './file.service.js'
 
-export const MESSAGE_KINDS = Object.freeze(['text', 'code', 'file'])
 export const MESSAGE_SOURCES = Object.freeze(['web', 'api'])
 
 const MAX_TEXT_LENGTH = 4000
@@ -24,16 +23,21 @@ const insertMessage = db.prepare(`
   VALUES (@room, @userId, @kind, @body, @lang, @fileId, @source, @createdAt, @expiresAt)
 `)
 
+// 附件直接 LEFT JOIN 出来，一页 80 条不必再查 80 次 files
 const SELECT_BASE = `
-  SELECT m.id, m.room, m.kind, m.body, m.lang, m.file_id, m.source, m.created_at,
-         u.id AS author_id, u.display_name AS author_name
+  SELECT m.id, m.room, m.kind, m.body, m.lang, m.source, m.created_at,
+         u.id AS author_id, u.display_name AS author_name,
+         f.id AS file_id, f.original_name AS file_name, f.mime AS file_mime, f.category AS file_category,
+         f.size AS file_size, f.created_at AS file_created_at, f.expires_at AS file_expires_at
   FROM messages m
   JOIN users u ON u.id = m.user_id
+  LEFT JOIN files f ON f.id = m.file_id
 `
 
 const selectById = db.prepare(`${SELECT_BASE} WHERE m.id = ?`)
 const selectLatest = db.prepare(`${SELECT_BASE} WHERE m.room = ? ORDER BY m.id DESC LIMIT ?`)
 const selectBefore = db.prepare(`${SELECT_BASE} WHERE m.room = ? AND m.id < ? ORDER BY m.id DESC LIMIT ?`)
+const selectAfter = db.prepare(`${SELECT_BASE} WHERE m.room = ? AND m.id > ? ORDER BY m.id ASC LIMIT ?`)
 
 function toDto(row) {
   if (!row) return null
@@ -46,7 +50,17 @@ function toDto(row) {
     source: row.source,
     createdAt: row.created_at,
     user: { id: row.author_id, name: row.author_name },
-    file: row.file_id ? fileDto(getFile(row.file_id)) : null,
+    file: row.file_id
+      ? fileDto({
+        id: row.file_id,
+        original_name: row.file_name,
+        mime: row.file_mime,
+        category: row.file_category,
+        size: row.file_size,
+        created_at: row.file_created_at,
+        expires_at: row.file_expires_at,
+      })
+      : null,
   }
 }
 
@@ -56,12 +70,15 @@ export function getMessage(id) {
 
 /**
  * 读取某个房间的历史消息。
- * @param {{ room: string, limit: number, before?: number|null }} params before 为消息 id，用于向上翻页
+ * @param {{ room: string, limit: number, before?: number|null, after?: number|null }} params
+ *        before：只要比它早的，向上翻页；after：只要比它新的，断线重连后补拉。
+ *        两个同时给时以 after 为准。
  * @returns 按时间正序排列的消息 DTO 数组
  */
-export function listMessages({ room, limit, before = null }) {
+export function listMessages({ room, limit, before = null, after = null }) {
   const size = Math.min(Math.max(Number(limit) || 0, 1), 200)
   const target = normalizeRoom(room)
+  if (after !== null) return selectAfter.all(target, after, size).map(toDto)
   const rows = before ? selectBefore.all(target, before, size) : selectLatest.all(target, size)
   return rows.reverse().map(toDto)
 }
@@ -81,7 +98,7 @@ function persist({ room, userId, kind, body, lang, fileId, source }) {
     fileId: fileId ?? null,
     source,
     createdAt,
-    expiresAt: createdAt + config.retentionHours * 60 * 60 * 1000,
+    expiresAt: createdAt + config.retentionMs,
   })
   return getMessage(result.lastInsertRowid)
 }

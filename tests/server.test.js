@@ -22,6 +22,8 @@ process.env.RETENTION_HOURS = '1'
 process.env.UPLOAD_RATE_PER_MINUTE = '100'
 // 大部分用例要连着传好几张图，节流单独用一个专门的用例去测
 process.env.UPLOAD_MIN_INTERVAL_MS = '0'
+// 这个文件里登录几十次，限流在 tests/limits.test.js 里单独验
+process.env.LOGIN_RATE_PER_MINUTE = '1000'
 
 // 必须在环境变量就位后再加载，config 是在 import 时求值的
 const { createHttpServer } = await import('../server/app.js')
@@ -236,6 +238,45 @@ test('历史消息按时间正序返回', async () => {
   assert.deepEqual(ids, [...ids].sort((a, b) => a - b))
 })
 
+test('after 游标只返回比它新的消息，断线重连靠它补', async () => {
+  const { payload } = await call('/api/messages')
+  const ids = payload.messages.map((m) => m.id)
+  const pivot = ids[ids.length - 2]
+
+  const newer = await call(`/api/messages?after=${pivot}`)
+  assert.equal(newer.status, 200)
+  assert.deepEqual(newer.payload.messages.map((m) => m.id), ids.filter((id) => id > pivot))
+
+  const fromStart = await call('/api/messages?after=0&limit=2')
+  assert.equal(fromStart.payload.messages.length, 2)
+  assert.equal(fromStart.payload.messages[0].id, ids[0], 'after=0 从最早的开始')
+
+  const none = await call(`/api/messages?after=${ids[ids.length - 1]}`)
+  assert.deepEqual(none.payload.messages, [])
+})
+
+test('分页参数不是整数时返回 400，而不是 500', async () => {
+  const badLimit = await call('/api/messages?limit=1.5')
+  assert.equal(badLimit.status, 400)
+  assert.equal(badLimit.payload.code, 'invalid_limit')
+
+  const tooBig = await call('/api/messages?limit=999')
+  assert.equal(tooBig.status, 400)
+
+  const badCursor = await call('/api/messages?before=abc')
+  assert.equal(badCursor.status, 400)
+  assert.equal(badCursor.payload.code, 'invalid_cursor')
+
+  const badAfter = await call('/api/messages?after=-1')
+  assert.equal(badAfter.status, 400)
+})
+
+test('坏掉的 JSON 请求体是 400，不是 500', async () => {
+  const { status, payload } = await call('/api/messages', { method: 'POST', raw: '{bad json', headers: { 'Content-Type': 'application/json' } })
+  assert.equal(status, 400)
+  assert.equal(payload.code, 'invalid_json')
+})
+
 test('跨站写操作被拒绝', async () => {
   const { status, payload } = await call('/api/messages', {
     method: 'POST',
@@ -384,6 +425,35 @@ test('上传节流挡住客户端连击，但不拦网页端', async () => {
   assert.equal(throttle.consume('key:1').allowed, false, '紧接着的第二张被挡')
   assert.equal(throttle.consume('user:1').allowed, true, '网页端用的是另一个维度，不受影响')
   throttle.stop()
+})
+
+test('字段名写错是 400 missing_file，不是 500', async () => {
+  const form = new FormData()
+  form.append('image', pngBlob(), 'map.png')
+  const response = await fetch(`${origin}/api/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  })
+  assert.equal(response.status, 400)
+  assert.equal((await response.json()).code, 'missing_file')
+})
+
+test('入库了却没有消息引用的文件会被清理', async () => {
+  // 模拟"文件落库后、消息建好前"进程崩掉留下的残留：一行 files 记录 + 一个磁盘文件
+  const storedName = 'deadbeef'.repeat(4)
+  const absolute = path.join(process.env.UPLOAD_DIR, storedName)
+  fs.writeFileSync(absolute, Buffer.from(PNG_HEADER))
+  const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000
+  db.prepare(`
+    INSERT INTO files (owner_id, stored_name, original_name, mime, category, size, created_at, expires_at)
+    VALUES (1, ?, 'ghost.png', 'image/png', 'image', 8, ?, ?)
+  `).run(storedName, twoHoursAgo, twoHoursAgo + 3600_000)
+
+  const result = await runCleanup()
+  assert.ok(result.orphans >= 1)
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM files WHERE stored_name = ?').get(storedName).n, 0, '库里的残留行应被删除')
+  assert.equal(fs.existsSync(absolute), false, '它的磁盘文件也应一并删除')
 })
 
 test('空文件被拒且不留残留', async () => {
@@ -556,6 +626,17 @@ test('用户可以改自己的昵称', async () => {
   const empty = await call('/api/auth/me', { method: 'PATCH', body: { displayName: '  ' } })
   assert.equal(empty.status, 400)
   assert.equal(empty.payload.code, 'invalid_display_name')
+})
+
+test('改资料是原子的：密码校验失败时昵称也不会改', async () => {
+  await loginAs('scout', 'map-sync-2026')
+  const before = (await call('/api/auth/me')).payload.user.name
+  const { status } = await call('/api/auth/me', {
+    method: 'PATCH',
+    body: { displayName: '改了一半', currentPassword: 'wrong', newPassword: 'whatever-new-1' },
+  })
+  assert.equal(status, 401)
+  assert.equal((await call('/api/auth/me')).payload.user.name, before, '请求失败就什么都不该改')
 })
 
 test('用户改密码：旧密码校验、其它设备被踢、当前设备保持登录', async () => {

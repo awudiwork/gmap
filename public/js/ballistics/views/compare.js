@@ -6,9 +6,10 @@ import { icon } from '../../ui.js'
 import { bodyMap } from '../bodymap.js'
 import { h, plateBadge, rankBadge, roundTag, weaponIcon } from '../dom.js'
 import {
-  MAX_PICKED, MOA_CM_PER_M, ROUND_SHORT, armourName, armourShort, calibreFor, calibreLabel, formatNumber, formatShots,
+  MOA_CM_PER_M, ROUND_SHORT, armourName, armourShort, calibreFor, calibreLabel, formatNumber, formatShots,
   formatTime, hitLabel, loadsFor, roundLabel, shotBand, slugOf, solve,
 } from '../engine.js'
+import { addCard } from '../summary.js'
 
 /** 每发伤害的乘法链，一行一个因子 */
 function breakdown(session, weapon, solution) {
@@ -145,16 +146,6 @@ function weaponBlock(session, weapon, round, { standard, multi, rank }) {
   return card
 }
 
-function addCard(session) {
-  const node = h('button', { type: 'button', class: 'add-card cmp', onclick: () => session.set({ pickerOpen: true }) })
-  node.append(
-    h('span', { class: 'ring' }, icon('plus')),
-    h('span', { class: 'strong', text: '添加一把武器来比较' }),
-    h('span', { class: 'dim', text: `${session.selected.length} / ${MAX_PICKED}` }),
-  )
-  return node
-}
-
 export function renderCompare(session) {
   if (!session.ranked.length) return null
   const multi = session.loads.length > 1
@@ -200,6 +191,6 @@ export function renderCompare(session) {
       wrap.append(weaponBlock(session, entry.weapon, choice.round, { standard: choice.standard, multi: false, rank: index + 1 }))
     })
   }
-  if (session.ranked.length < 3) wrap.append(addCard(session))
+  if (session.ranked.length < 3) wrap.append(addCard(session, 'cmp'))
   return h('div', { class: 'view-compare' }, wrap)
 }

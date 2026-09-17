@@ -61,10 +61,21 @@ export function serialize(node) {
   return inner
 }
 
+/**
+ * 把连续三个以上的空行压成一个空行，但围栏代码块里的原样保留：
+ * 代码里的空行是内容，不是排版。
+ */
+export function collapseBlankLines(text) {
+  return text
+    .split(/(```[\s\S]*?```)/)
+    .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(/\n{3,}/g, '\n\n')))
+    .join('')
+}
+
 /** 序列化整个编辑器并归一化首尾空白 */
 export function readValue(root) {
   const text = [...root.childNodes].map(serialize).join('')
-  return text.replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '')
+  return collapseBlankLines(text).replace(/^\n+|\n+$/g, '')
 }
 
 const escapeHtml = (text) => text

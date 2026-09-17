@@ -9,7 +9,8 @@ import { config } from '../config.js'
 import { badRequest, notFound, tooMany, wrap } from '../lib/errors.js'
 import { createRateLimiter, createThrottle } from '../lib/ratelimit.js'
 import { DEFAULT_ROOM, ROOMS } from '../lib/rooms.js'
-import { requireUser } from '../middleware/auth.js'
+import { parsePositiveInt } from '../lib/validate.js'
+import { requireSession, requireUser } from '../middleware/auth.js'
 import {
   discardFile,
   fileDto,
@@ -64,23 +65,35 @@ messageRouter.get('/rooms', requireUser, (_req, res) => {
   res.json({ ok: true, rooms: ROOMS, defaultRoom: DEFAULT_ROOM })
 })
 
+/**
+ * 历史消息。两种游标：before 向上翻更早的，after 补拉更新的（断线重连后用）。
+ * 两个都不带就是最近的一页。
+ */
 messageRouter.get('/messages', requireUser, (req, res) => {
-  const before = req.query.before === undefined ? null : Number(req.query.before)
-  if (before !== null && (!Number.isInteger(before) || before <= 0)) {
-    throw badRequest('invalid_cursor', 'before 必须是正整数消息 id')
-  }
-  const limit = req.query.limit === undefined ? config.historyLimit : Number(req.query.limit)
-  res.json({ ok: true, messages: listMessages({ room: req.query.room, limit, before }) })
+  const cursor = { code: 'invalid_cursor', message: '游标必须是正整数消息 id' }
+  const before = req.query.before === undefined ? null : parsePositiveInt(req.query.before, cursor)
+  // after=0 是合法的："从头开始"，空频道断线重连时就会这么传
+  const after = req.query.after === undefined
+    ? null
+    : (req.query.after === '0' ? 0 : parsePositiveInt(req.query.after, cursor))
+  const limit = req.query.limit === undefined
+    ? config.historyLimit
+    : parsePositiveInt(req.query.limit, { code: 'invalid_limit', message: 'limit 必须是 1~200 的整数', max: 200 })
+  res.json({ ok: true, messages: listMessages({ room: req.query.room, limit, before, after }) })
 })
 
-messageRouter.post('/messages', requireUser, (req, res) => {
+/**
+ * 发文字 / 代码消息，只对网页会话开放。API Key 的职责就是推图，
+ * 不给它发文字的路径：一枚泄露的 Key 能做的事只剩上传，而上传有节流和配额挡着。
+ */
+messageRouter.post('/messages', requireSession, (req, res) => {
   const message = createTextMessage({
     room: req.body?.room,
     userId: req.auth.user.id,
     kind: req.body?.kind ?? 'text',
     body: req.body?.body,
     lang: req.body?.lang,
-    source: req.auth.via === 'apikey' ? 'api' : 'web',
+    source: 'web',
   })
   hub.broadcast({ type: 'message', data: message })
   res.status(201).json({ ok: true, message })
@@ -121,10 +134,7 @@ messageRouter.post('/upload', requireUser, guardUploadRate, uploadMiddleware, wr
 }))
 
 messageRouter.get('/files/:id', requireUser, (req, res) => {
-  const id = Number(req.params.id)
-  if (!Number.isInteger(id) || id <= 0) {
-    throw badRequest('invalid_id', '文件 id 非法')
-  }
+  const id = parsePositiveInt(req.params.id, { code: 'invalid_id', message: '文件 id 非法' })
   const row = getFile(id)
   // 文件跟着消息一起被清理，所以库里查不到就是已经过期了
   if (!row) throw notFound('file_expired', '文件已超过保留期并被清理')

@@ -36,6 +36,7 @@ function loadData() {
           icons: payload.weapons ?? {},
           source: payload.source,
           generatedAt: payload.generatedAt,
+          fetchedAt: payload.fetchedAt,
         }
       })
       .catch((err) => {
@@ -117,12 +118,15 @@ export async function openBallistics({ query } = {}) {
   const ui = buildShell()
   root = ui.shell
   document.body.append(root)
+  // 数据在路上时可能被关掉再打开，那时 root 已经是另一个壳，这一次的后续全部作废
+  const mine = ui.shell
+  const alive = () => root === mine
 
   let unsubscribe = null
   let picker = null
 
   const close = () => {
-    if (!root) return
+    if (!alive()) return
     picker?.close()
     unsubscribe?.()
     document.removeEventListener('keydown', onKey)
@@ -141,7 +145,7 @@ export async function openBallistics({ query } = {}) {
   try {
     loaded = await loadData()
   } catch (err) {
-    if (!root) return
+    if (!alive()) return
     ui.main.replaceChildren(errorBox(
       err instanceof ApiError ? err.message : '连不上服务端，检查网络后重试。',
       {
@@ -154,10 +158,15 @@ export async function openBallistics({ query } = {}) {
     ))
     return
   }
-  if (!root) return
+  if (!alive()) return
 
-  const { data, icons, source, generatedAt } = loaded
-  ui.sub.textContent = `数据 ${generatedAt ?? '未知日期'}，${source === 'snapshot' ? '本地快照' : '来自 metaforge.app'}`
+  const { data, icons, source, generatedAt, fetchedAt } = loaded
+  const sourceText = {
+    upstream: '来自 metaforge.app',
+    stale: `来自 metaforge.app，${new Date(fetchedAt).toLocaleDateString('zh-CN')} 之后没能再刷新`,
+    snapshot: '本地快照',
+  }[source] ?? source
+  ui.sub.textContent = `数据 ${generatedAt ?? '未知日期'}，${sourceText}`
 
   const initial = parseState(data, new URLSearchParams(query ?? readStored()))
   const session = new Session(data, usableWeapons(data), icons, initial)
@@ -206,8 +215,21 @@ export async function openBallistics({ query } = {}) {
     view?.fitBandText?.()
   }
 
+  // 拖滑杆时每个 input 事件都来一次，攒到下一帧只画一遍
+  let lightFrame = 0
   function render(meta = {}) {
-    if (!root) return
+    if (!alive()) return
+    if (meta.light) {
+      if (!lightFrame) {
+        lightFrame = requestAnimationFrame(() => {
+          lightFrame = 0
+          if (alive()) renderMain()
+        })
+      }
+      return
+    }
+    cancelAnimationFrame(lightFrame)
+    lightFrame = 0
     renderMain()
     if (!meta.light) {
       ui.rail.replaceChildren(renderRail(session, { onOpenPicker: picker.open }))
@@ -235,3 +257,6 @@ export async function openBallistics({ query } = {}) {
 }
 
 export const isOpen = () => root !== null
+
+/** 工具注册表（tools.js）按这个名字调用 */
+export { openBallistics as open }

@@ -51,6 +51,41 @@ function bindSubmit(node, note, handler) {
   })
 }
 
+/**
+ * 两段式确认的危险按钮：第一次点亮成确认态，5 秒内再点才执行，不点就复位。
+ * 不用 window.confirm，它会把整个页面挡住。
+ *
+ * @param {{ label: string, confirmLabel: string, glyph: string, onConfirm: () => Promise<void> }} config
+ *        onConfirm 抛错时按钮复位，由调用方负责提示
+ */
+function armedButton({ label, confirmLabel, glyph, onConfirm }) {
+  const node = button(label, { variant: 'warn slim', glyph })
+  let armed = false
+  let timer = null
+  const disarm = () => {
+    armed = false
+    node.replaceChildren(icon(glyph), el('span', null, label))
+  }
+  node.addEventListener('click', async () => {
+    if (!armed) {
+      armed = true
+      node.replaceChildren(icon('warning-circle'), el('span', null, confirmLabel))
+      timer = setTimeout(disarm, 5000)
+      return
+    }
+    clearTimeout(timer)
+    node.disabled = true
+    try {
+      await onConfirm()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '操作失败', 'bad')
+      node.disabled = false
+      disarm()
+    }
+  })
+  return node
+}
+
 /** 选项少且互斥时用分段按钮，当前值一眼可见，比下拉框直接 */
 function picker(options, currentValue, onPick) {
   const wrap = el('div', 'pick')
@@ -330,34 +365,17 @@ export async function openKeys() {
       )
       item.append(info)
 
-      // 两段式确认：删掉就没了，客户端会立刻掉线
-      const dropBtn = button('删除', { variant: 'warn slim', glyph: 'trash' })
-      let armed = false
-      let timer = null
-      const disarm = () => {
-        armed = false
-        dropBtn.replaceChildren(icon('trash'), el('span', null, '删除'))
-      }
-      dropBtn.addEventListener('click', async () => {
-        if (!armed) {
-          armed = true
-          dropBtn.replaceChildren(icon('warning-circle'), el('span', null, '确认删除'))
-          timer = setTimeout(disarm, 5000)
-          return
-        }
-        clearTimeout(timer)
-        dropBtn.disabled = true
-        try {
+      // 删掉就没了，客户端会立刻掉线
+      item.append(armedButton({
+        label: '删除',
+        confirmLabel: '确认删除',
+        glyph: 'trash',
+        onConfirm: async () => {
           await api.deleteKey(key.id)
           await refresh()
           toast(`已删除 ${key.name}，用它的客户端会立刻掉线`)
-        } catch (err) {
-          toast(err instanceof ApiError ? err.message : '删除失败', 'bad')
-          dropBtn.disabled = false
-          disarm()
-        }
-      })
-      item.append(dropBtn)
+        },
+      }))
       ledger.append(item)
     }
   }
@@ -442,9 +460,10 @@ export async function openUsers(me) {
     card.append(field('新密码', input), acts, cardNote)
 
     cancelBtn.addEventListener('click', () => card.remove())
+    // 重置密码不改名单上的任何字段，不必刷新列表；刷新会把这张卡连同提示一起删掉
     bindSubmit(confirmBtn, cardNote, async () => {
       await api.resetUserPassword(user.id, input.value)
-      await refresh()
+      input.value = ''
       return `已重置，把新密码告诉 ${user.name}，他需要重新登录`
     })
 
@@ -474,32 +493,15 @@ export async function openUsers(me) {
           resetPanel(user, item)
         })
 
-        // 两段式确认：第一次点亮成确认态，5 秒不再点就复位
-        const deleteBtn = button('注销', { variant: 'warn slim', glyph: 'trash' })
-        let armed = false
-        let timer = null
-        const disarm = () => {
-          armed = false
-          deleteBtn.replaceChildren(icon('trash'), el('span', null, '注销'))
-        }
-        deleteBtn.addEventListener('click', async () => {
-          if (!armed) {
-            armed = true
-            deleteBtn.replaceChildren(icon('warning-circle'), el('span', null, '确认注销'))
-            timer = setTimeout(disarm, 5000)
-            return
-          }
-          clearTimeout(timer)
-          deleteBtn.disabled = true
-          try {
+        const deleteBtn = armedButton({
+          label: '注销',
+          confirmLabel: '确认注销',
+          glyph: 'trash',
+          onConfirm: async () => {
             await api.deleteUser(user.id)
             await refresh()
             toast(`已注销 ${user.name}，登录和 Key 立即失效，日志保留`)
-          } catch (err) {
-            toast(err instanceof ApiError ? err.message : '注销失败', 'bad')
-            deleteBtn.disabled = false
-            disarm()
-          }
+          },
         })
 
         item.append(resetBtn, deleteBtn)

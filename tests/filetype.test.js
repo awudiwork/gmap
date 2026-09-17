@@ -36,8 +36,24 @@ test('识别 MP4', () => {
   })
 })
 
-test('识别 WebM', () => {
-  assert.equal(sniff(head(0x1a, 0x45, 0xdf, 0xa3))?.category, 'video')
+/** EBML 头：魔数 + 若干元素，DocType（42 82）跟着长度和字符串 */
+const ebml = (docType) => head(
+  0x1a, 0x45, 0xdf, 0xa3, 0x9f,
+  0x42, 0x86, 0x81, 0x01,
+  0x42, 0xf7, 0x81, 0x01,
+  0x42, 0xf2, 0x81, 0x04,
+  0x42, 0xf3, 0x81, 0x08,
+  0x42, 0x82, 0x80 | docType.length, ...ascii(docType),
+  0x42, 0x87, 0x81, 0x02,
+)
+
+test('识别 WebM（EBML 头且 DocType 是 webm）', () => {
+  assert.deepEqual(sniff(ebml('webm')), { mime: 'video/webm', category: 'video' })
+})
+
+test('MKV 和 WebM 共用 EBML 魔数，但浏览器放不了 MKV，不能识别为视频', () => {
+  assert.equal(sniff(ebml('matroska')), null)
+  assert.equal(sniff(head(0x1a, 0x45, 0xdf, 0xa3)), null, '只有魔数、没有 DocType 的不认')
 })
 
 test('伪装成图片的 HTML 嗅探失败，必须返回 null', () => {

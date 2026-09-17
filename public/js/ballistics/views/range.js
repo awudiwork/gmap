@@ -187,8 +187,10 @@ export function renderRange(session, { width }) {
   }
   const showHover = (event) => {
     const range = rangeAt(event)
+    // 悬停落在 10 米的整数点上，每 5 米一个样本已经算过，直接取
+    const sample = range / STEP
     const solved = series
-      .map((row) => ({ s: row, sol: solve(session.data, row.weapon, { ...base, round: row.round }, range) }))
+      .map((row) => ({ s: row, sol: row.sols[sample] ?? solve(session.data, row.weapon, { ...base, round: row.round }, range) }))
       .sort(compareSolutions)
     hoverLayer.replaceChildren(svg('line', { x1: X(range), x2: X(range), y1: pad.top, y2: Y(0), class: 'stroke-mid', 'stroke-width': 1 }))
     for (const entry of solved) {

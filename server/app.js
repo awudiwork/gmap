@@ -52,9 +52,9 @@ export function createApp() {
   // app.set('trust proxy', 1)
 
   app.use(securityHeaders)
-  app.use(express.json({ limit: '256kb' }))
-  app.use(attachAuth)
-  app.use(verifyOrigin)
+  // 鉴权和同源校验只有接口需要。挂在全局的话每个 css / js / 图标请求都要
+  // 算一次 SHA-256、查两次库，而静态资源根本不看 req.auth
+  app.use('/api', express.json({ limit: '256kb' }), attachAuth, verifyOrigin)
 
   app.use('/api/auth', authRouter)
   app.use('/api/admin', adminRouter)

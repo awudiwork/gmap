@@ -7,6 +7,7 @@
 import crypto from 'node:crypto'
 import { db } from '../db.js'
 import { config } from '../config.js'
+import { sha256 } from '../lib/hash.js'
 
 export const SESSION_COOKIE = 'gmap_session'
 
@@ -18,8 +19,6 @@ const selectSession = db.prepare('SELECT * FROM sessions WHERE token_hash = ?')
 const deleteSession = db.prepare('DELETE FROM sessions WHERE token_hash = ?')
 const deleteExpired = db.prepare('DELETE FROM sessions WHERE expires_at <= ?')
 const deleteByUser = db.prepare('DELETE FROM sessions WHERE user_id = ?')
-
-const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex')
 
 /** 为用户签发新会话，返回明文 token（只在此刻存在，之后无法从库里还原） */
 export function createSession(userId) {

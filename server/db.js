@@ -111,6 +111,12 @@ const MIGRATIONS = [
   ALTER TABLE messages ADD COLUMN room TEXT NOT NULL DEFAULT 'all';
   CREATE INDEX idx_messages_room ON messages(room, id DESC);
   `,
+
+  // v6：messages.file_id 有外键却没索引。清理事务里每删一条 files 行，
+  // SQLite 都要全表扫 messages 来维护 ON DELETE SET NULL，一轮 500 条就是 500 次全表扫。
+  `
+  CREATE INDEX idx_messages_file ON messages(file_id);
+  `,
 ]
 
 function migrate() {

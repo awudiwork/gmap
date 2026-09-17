@@ -31,6 +31,10 @@ const updateAdminFlag = db.prepare('UPDATE users SET is_admin = ? WHERE id = ?')
 const updateDisplayName = db.prepare('UPDATE users SET display_name = ? WHERE id = ?')
 const softDelete = db.prepare('UPDATE users SET deleted_at = ?, username = ? WHERE id = ?')
 const removeKeysOfUser = db.prepare('DELETE FROM api_keys WHERE user_id = ?')
+const selectOtherAdmins = db.prepare('SELECT id, username FROM users WHERE is_admin = 1 AND id != ?')
+
+/** 是不是 .env 里指定的管理员登录名（用户名不分大小写） */
+const isAdminName = (name) => name.toLowerCase() === config.adminUsername.toLowerCase()
 
 /** 把库记录转成可以安全下发给前端的形态 */
 export function toPublicUser(row) {
@@ -81,7 +85,7 @@ function assertPasswordShape(password) {
 
 /**
  * 创建用户。
- * @throws AppError 用户名/密码不合规（400）、用户名已存在（409）
+ * @throws AppError 用户名/密码不合规（400）、用户名已存在或是保留的管理员名（409）
  */
 export async function createUser({ username, password, displayName, isAdmin = false }) {
   const name = String(username ?? '').trim()
@@ -92,6 +96,11 @@ export async function createUser({ username, password, displayName, isAdmin = fa
   const display = assertDisplayName(String(displayName ?? '').trim() || name)
   if (findUserByUsername(name)) {
     throw conflict('username_taken', '该用户名已被占用')
+  }
+  // 管理员登录名是保留的：先注册占了这个名，等运维改配置重启时，
+  // 引导逻辑会把这个账号提升成管理员，等于自助提权
+  if (!isAdmin && isAdminName(name)) {
+    throw conflict('username_reserved', '该用户名保留给管理员')
   }
 
   const passwordHash = await bcrypt.hash(secret, BCRYPT_ROUNDS)
@@ -138,7 +147,11 @@ export async function setPassword(userId, password) {
   updateHash.run(await bcrypt.hash(secret, BCRYPT_ROUNDS), userId)
 }
 
-function assertDisplayName(displayName) {
+/**
+ * 校验昵称并返回规范化后的值。导出给路由用，好在落库前把整个请求先校验完。
+ * @throws AppError 昵称不合规（400）
+ */
+export function assertDisplayName(displayName) {
   const display = String(displayName ?? '').trim()
   if (!display) throw badRequest('invalid_display_name', '昵称不能为空')
   if (display.length > 24) throw badRequest('invalid_display_name', '昵称最长 24 个字符')
@@ -223,11 +236,16 @@ export function deleteUser(actorId, targetId) {
 }
 
 /**
- * 启动引导：保证 .env 里配置的管理员账号存在且密码与配置一致。
+ * 启动引导：保证 .env 里配置的管理员账号存在且密码与配置一致，
+ * 且**只有它**是管理员。
  *
  * 设计取舍：.env 是管理员凭据的唯一事实来源，每次启动都会把库里的密码同步过去。
  * 这样"改 .env 重启即可找回管理员"，代价是不能在页面上改管理员密码——
  * 本系统本来就没有改密码入口，不构成冲突。
+ *
+ * 改了 ADMIN_USERNAME 之后，旧的管理员会被降成普通用户：不降的话它既改不了密码
+ * 也注销不掉（页面上对管理员的三个操作都是硬拒绝），成了一个只能手改库的残留账号。
+ * 被提升或被降级的账号，旧会话一律吊销，免得浏览器里的旧 Cookie 带着新身份。
  *
  * @throws Error 配置缺失且系统会因此完全无法登录时，直接终止启动
  */
@@ -245,25 +263,31 @@ export async function ensureAdminAccount() {
     return null
   }
 
-  const existing = findUserByUsername(adminUsername)
-  if (!existing) {
-    const created = await createUser({
+  let admin = findUserByUsername(adminUsername)
+  if (!admin) {
+    admin = await createUser({
       username: adminUsername,
       password: adminPassword,
       displayName: adminUsername,
       isAdmin: true,
     })
-    console.log(`[gmap] 已按 .env 创建管理员账号：${created.username}`)
-    return created
+    console.log(`[gmap] 已按 .env 创建管理员账号：${admin.username}`)
+  } else {
+    if (!(await bcrypt.compare(adminPassword, admin.password_hash))) {
+      await setPassword(admin.id, adminPassword)
+      console.log(`[gmap] 管理员 ${admin.username} 的密码已同步为 .env 中的值`)
+    }
+    if (admin.is_admin !== 1) {
+      updateAdminFlag.run(1, admin.id)
+      destroyUserSessions(admin.id)
+      console.log(`[gmap] 已将 ${admin.username} 提升为管理员`)
+    }
   }
 
-  if (!(await bcrypt.compare(adminPassword, existing.password_hash))) {
-    await setPassword(existing.id, adminPassword)
-    console.log(`[gmap] 管理员 ${existing.username} 的密码已同步为 .env 中的值`)
+  for (const other of selectOtherAdmins.all(admin.id)) {
+    updateAdminFlag.run(0, other.id)
+    destroyUserSessions(other.id)
+    console.log(`[gmap] ${other.username} 不再是 .env 指定的管理员，已降为普通用户`)
   }
-  if (existing.is_admin !== 1) {
-    updateAdminFlag.run(1, existing.id)
-    console.log(`[gmap] 已将 ${existing.username} 提升为管理员`)
-  }
-  return findUserById(existing.id)
+  return findUserById(admin.id)
 }

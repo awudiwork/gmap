@@ -26,6 +26,8 @@ const state = {
   subNode: null,
   zoomNode: null,
   openRaw: null,
+  /** 最近一次发出的图片探针，旧探针的回调按它判断是否作废 */
+  probe: null,
   unsubscribe: null,
   scale: 1,
   tx: 0,
@@ -312,8 +314,12 @@ function load(item, keepView) {
   state.subNode.textContent = item.sub
   state.openRaw.href = item.url
 
+  // 两张图连着到时，慢的那张可能后回调，把画面换回旧图而标题已经是新图的。
+  // 记下这次请求，回调时不是最近一次就丢弃
   const probe = new Image()
+  state.probe = probe
   probe.addEventListener('load', () => {
+    if (state.probe !== probe || !isOpen()) return
     const sameSize = state.natural.width === probe.naturalWidth && state.natural.height === probe.naturalHeight
     state.natural = { width: probe.naturalWidth, height: probe.naturalHeight }
     state.img.src = item.url
@@ -326,6 +332,7 @@ function load(item, keepView) {
     else if (!restoreView()) fitStage()
   })
   probe.addEventListener('error', () => {
+    if (state.probe !== probe || !isOpen()) return
     state.subNode.textContent = '图片读取失败，可能已过保留期被清除'
   })
   probe.src = item.url

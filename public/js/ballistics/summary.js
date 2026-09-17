@@ -3,7 +3,7 @@
  * 这些不属于任何一个具体视图，切视图时它们不动。
  */
 import { icon } from '../ui.js'
-import { h, plateBadge, rankBadge, roundGlyph, roundTag, weaponIcon } from './dom.js'
+import { h, plateBadge, rankBadge, roundGlyph, roundTag, segmented, weaponIcon } from './dom.js'
 import {
   MAX_PICKED, ROUND_SHORT, SHOT_BANDS, TIME_BANDS, armourName, calibreLabel, formatSeconds, formatShots,
   hitLabel, shotBand,
@@ -26,7 +26,8 @@ const VIEW_ICON = {
 
 /* ── 名次 ─────────────────────────────────────────────── */
 
-function addCard(session, className) {
+/** 不满三把枪时的占位卡，点了开选枪面板。名次区和逐发比较共用 */
+export function addCard(session, className) {
   const node = h('button', { type: 'button', class: `add-card ${className}`, onclick: () => session.set({ pickerOpen: true }) })
   node.append(
     h('span', { class: 'ring' }, icon('plus')),
@@ -186,8 +187,9 @@ export function renderControls(session) {
   if (['ammo', 'compare', 'zones'].includes(session.view)) return null
   const wrap = h('div', { class: 'controls' })
   if (session.view === 'table') {
-    wrap.append(segmentedInline({
+    wrap.append(segmented({
       label: '显示范围',
+      className: 'inline',
       options: [
         { key: 'all', label: '全部' },
         { key: 'picked', label: '已选', disabled: session.selected.length === 0 },
@@ -196,8 +198,9 @@ export function renderControls(session) {
       onChange: (key) => session.set({ pickedOnly: key === 'picked' }),
     }))
   }
-  wrap.append(segmentedInline({
+  wrap.append(segmented({
     label: '按什么着色',
+    className: 'inline',
     options: [
       { key: 'shots', label: '击杀弹数' },
       { key: 'time', label: '击杀时间' },
@@ -206,21 +209,6 @@ export function renderControls(session) {
     onChange: (key) => session.set({ metric: key }),
   }))
   return wrap
-}
-
-function segmentedInline({ label, options, value, onChange }) {
-  const node = h('div', { class: 'seg inline', role: 'group', 'aria-label': label })
-  for (const option of options) {
-    node.append(h('button', {
-      type: 'button',
-      class: 'seg-item',
-      'aria-pressed': String(option.key === value),
-      disabled: !!option.disabled,
-      text: option.label,
-      onclick: () => onChange(option.key),
-    }))
-  }
-  return node
 }
 
 /* ── 效果图例 ─────────────────────────────────────────── */

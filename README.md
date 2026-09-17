@@ -153,13 +153,18 @@ Content-Type: multipart/form-data
 
 | HTTP | `code` | 含义 |
 | --- | --- | --- |
-| 429 | `upload_too_fast` | 两次上传之间不足 `UPLOAD_MIN_INTERVAL_MS`（默认 1 秒） |
+| 429 | `upload_too_fast` | 两次上传之间不足 `UPLOAD_MIN_INTERVAL_MS`（默认 1 秒）。**这一张丢弃即可，不要重试**：它挡的就是同一次按键的重复请求，重试会变成"一次发两张" |
 | 401 | `missing_credentials` | 没带 Key |
 | 401 | `invalid_api_key` | Key 错误、已被删除，或所属账号已注销 |
-| 400 | `missing_file` | 没有名为 `file` 的表单字段 |
+| 400 | `missing_file` | 没有名为 `file` 的表单字段（字段名写错也是它） |
 | 400 | `empty_file` | 文件是空的 |
+| 400 | `too_many_files` / `invalid_multipart` | 一次传了多个文件，或表单字段过多、过长 |
+| 400 | `body_too_long` | `caption` 超过 4000 字 |
 | 413 | `file_too_large` | 超过 `MAX_UPLOAD_MB` |
 | 429 | `upload_rate_limited` | 超过 `UPLOAD_RATE_PER_MINUTE`，响应里有建议等待秒数 |
+
+两种限额都按 Key 各算各的，不是全站共享。**Key 只能推图**：`POST /api/messages`（文字 / 代码）只对网页登录会话开放，
+拿 Key 调它是 `401 not_logged_in`。一枚泄露的 Key 能做的事只剩上传，而上传有节流和配额挡着。
 
 ### 4. 示例
 
@@ -369,7 +374,20 @@ response.EnsureSuccessStatusCode();
 设置存在浏览器本地（localStorage），跟设备走不跟账号走：游戏机上要弹图、手机上只想看消息，互不干扰。
 
 **查看器的行为**：已经打开时收到新图**不会关窗重开**，而是原地换图；新旧图尺寸一致时保留你当前的缩放与平移。
-滚轮缩放、拖拽平移、双击适应窗口、Esc 关闭。
+滚轮缩放、拖拽平移、双击适应窗口、Esc 关闭。两张图连着到时，只认最后一张，慢的那张晚回来也不会把画面换回去。
+
+### 实时通道怎么保证不丢不重
+
+网页端任何时刻只保持**一条** WebSocket，新建之前先把旧的彻底关掉。消息按 id 去重，重复投递最多画一次。
+
+- **不丢**：连接建立（含每次重连）时，从流里最新一条的 id 往后补拉（`GET /api/messages?after=<id>`），
+  断线那段时间的消息回来照样弹图。拉历史的过程中到达的实时消息先攒着，历史画完再补进去。
+- **服务重启后旧页面自动刷新**：`hello` 事件带一个 `bootId`（进程启动时生成）。重连后发现它变了，
+  说明服务重启过、代码可能已经更新，页面自己 reload。部署完不用挨个通知大家刷新。
+- **会话失效有明确信号**：握手被拒是关闭码 `4401`，页面直接去登录；改密码 / 被重置 / 被注销是 `4402`，
+  页面立刻重连一次（本机改密码时新 Cookie 已在手里，连得上），再被拒才去登录。
+  被吊销的账号已建立的连接会被服务端主动断开，不会继续收广播。
+- WebSocket 握手和 HTTP 写操作一样校验 `Origin` 与 `Host` 一致，跨站页面拿不到实时流。
 
 图片占满整个视口，标题栏和提示条以半透明渐变浮在图片之上，所以「适应窗口」拿到的是整屏而不是被控件挤剩下的部分。
 标题栏整条不拦截指针，只有里面的按钮可点，图片顶部区域照样能拖。
@@ -389,7 +407,8 @@ response.EnsureSuccessStatusCode();
   不会出现「库里没了、磁盘还在」之外的第三种状态。
 - 在线的客户端会收到 `messages_expired` 事件，页面上对应的消息当场移除，
   连带清掉因此变空的日期分隔线。
-- 顺带清理孤儿文件（落盘后入库失败的残留）和过期会话。
+- 顺带清理孤儿文件（落盘后入库失败的残留）、入库了却没有消息引用的文件（建消息前进程崩掉的残留，宽限一小时）和过期会话。
+- 孤儿扫描会删掉上传目录里任何库里不认识的文件，所以 `UPLOAD_DIR` **不能**和 `DATA_DIR`、项目目录重叠，配错了服务拒绝启动。
 
 > `FILE_RETENTION_HOURS` 已更名为 `RETENTION_HOURS`，因为它现在管的不只是文件。
 > 旧名还留在 `.env` 里的话，服务会**拒绝启动**并提示改名，而不是默默退回默认值。
@@ -417,7 +436,11 @@ response.EnsureSuccessStatusCode();
 | `COOKIE_SECURE` | `false` | 用 HTTPS 部署时改成 `true` |
 | `UPLOAD_MIN_INTERVAL_MS` | `1000` | 两次上传的最小间隔，挡热键连按。`0` 不限制，只对 API Key 生效 |
 | `UPLOAD_RATE_PER_MINUTE` | `30` | 每分钟上传次数上限，挡持续刷屏 |
+| `LOGIN_RATE_PER_MINUTE` | `10` | 同一来源 IP 每分钟的登录 / 注册尝试次数。登录成功**不会**清零，拿一个合法账号刷不掉它 |
 | `WARDOGS_BALLISTICS_REFRESH_HOURS` | `24` | Wardogs 弹道数据多久去 metaforge 刷新一次。`0` 不联网，只用仓库自带的快照 |
+
+`.env` 固定从项目根目录读取，和从哪个目录启动进程无关。
+`ADMIN_USERNAME` 改了之后，旧的管理员账号会在下次启动时降为普通用户，管理员登录名也不允许自助注册占用。
 
 ---
 
@@ -425,7 +448,21 @@ response.EnsureSuccessStatusCode();
 
 - **单进程单机**设计：SQLite + 本地磁盘 + 内存限流，不支持多实例横向扩展。按用户规模这是刻意的取舍。
 - 放公网请套一层 HTTPS 反向代理（Caddy / Nginx），并把 `COOKIE_SECURE` 改成 `true`。
-  代理需要转发 WebSocket 升级头（`Upgrade` / `Connection`）。
+  代理**必须原样转发 `Host` 头**，并转发 WebSocket 升级头。HTTP 写操作和 WebSocket 握手都会拿 `Origin` 和 `Host` 比对，
+  Nginx 默认会把 `Host` 改成上游地址，登录后所有写操作和实时连接都会被当成跨站拒掉（`403 cross_origin`）。Nginx 最少要这几行：
+
+  ```nginx
+  location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    client_max_body_size 30m;   # 不小于 MAX_UPLOAD_MB
+  }
+  ```
+
+  Caddy 的 `reverse_proxy` 默认就转发 `Host` 和升级头，不用额外配置。
 - 反代后如果要按真实来源 IP 限流，需要在 `server/app.js` 里开 `app.set('trust proxy', 1)`——
   默认没开，因为在没有可信代理的情况下开启会让限流被伪造的 `X-Forwarded-For` 绕过。
 - 备份只需要 `data/`（账号与聊天记录）；`uploads/` 反正 12 小时就清了。
@@ -442,7 +479,10 @@ response.EnsureSuccessStatusCode();
 - **鉴权在 multer 之前**：未授权的上传请求不会在磁盘上留下任何东西。
 - **CSP 不含 `script-src 'unsafe-inline'`**，前端所有脚本都在独立 `.js` 文件里。
 - **前端一律用 `textContent` 渲染用户内容**，没有把用户数据拼进 `innerHTML` 的路径。
-- **会话与 API Key 在库里都只存 SHA-256**；密码走 bcrypt；登录失败按 IP 限流。
+- **会话与 API Key 在库里都只存 SHA-256**；密码走 bcrypt；登录按 IP 限流且成功登录不清零计数。
+- **WebSocket 握手校验 Origin**，和 HTTP 写操作同一条规则；凭据被吊销时已建立的连接也会被服务端断开。
+- **只有 `.env` 指定的账号是管理员**：引导时会把其它管理员降级，管理员登录名不允许自助注册占用。
+- **上传目录与数据目录、项目目录不得重叠**，启动时校验。孤儿扫描只会清上传目录，误配也删不到数据库和代码。
 
 ---
 

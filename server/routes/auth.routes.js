@@ -7,6 +7,7 @@ import { config } from '../config.js'
 import { badRequest, forbidden, tooMany, wrap } from '../lib/errors.js'
 import { createRateLimiter } from '../lib/ratelimit.js'
 import {
+  assertDisplayName,
   changeOwnPassword,
   createUser,
   findUserById,
@@ -16,11 +17,16 @@ import {
 } from '../services/user.service.js'
 import { createSession, destroySession, SESSION_COOKIE } from '../services/session.service.js'
 import { clearSessionCookie, requireSession, setSessionCookie } from '../middleware/auth.js'
+import { hub } from '../ws/hub.js'
 
 export const authRouter = express.Router()
 
-/** 登录/注册按来源 IP 限流，挡住在线密码爆破 */
-const loginLimiter = createRateLimiter({ windowMs: 60_000, max: 10 })
+/**
+ * 登录/注册按来源 IP 限流，挡住在线密码爆破。
+ * 成功登录**不**清空计数：清了的话，手里有任意一个合法账号的人
+ * 每猜九次就登录一下自己的号，限流就形同虚设。
+ */
+const loginLimiter = createRateLimiter({ windowMs: 60_000, max: config.loginRatePerMinute })
 
 /** 定长比较，避免邀请码被逐字符试探 */
 function codeMatches(expected, actual) {
@@ -82,31 +88,40 @@ authRouter.post('/login', wrap(async (req, res) => {
   const user = await verifyCredentials(req.body?.username, req.body?.password)
   const { token } = createSession(user.id)
   setSessionCookie(res, token)
-  loginLimiter.reset(req.ip ?? 'unknown')
   res.json({ ok: true, user: toPublicUser(user) })
 }))
 
 /**
  * 改自己的昵称和密码。两者可以分别提交，也可以一次提交。
  *
+ * 先把两项都校验完再落库：昵称先写进去、随后密码校验失败，
+ * 就成了"报错了但昵称改了"这种没声明过的副作用。
+ *
  * 改密码会吊销该用户的全部会话（含当前这个），所以这里立刻补发一个新会话，
- * 效果是"其它设备被踢下线，本设备继续用"。
+ * 效果是"其它设备被踢下线，本设备继续用"。已建立的 WebSocket 也一并断开，
+ * 本设备拿着新 Cookie 会自己重连上来。
  */
 authRouter.patch('/me', requireSession, wrap(async (req, res) => {
   const { id } = req.auth.user
   const { displayName, currentPassword, newPassword } = req.body ?? {}
+  const changingPassword = newPassword !== undefined || currentPassword !== undefined
 
-  if (displayName !== undefined) {
-    updateDisplayNameOf(id, displayName)
+  const nextName = displayName === undefined ? null : assertDisplayName(displayName)
+  if (changingPassword && (!newPassword || !currentPassword)) {
+    throw badRequest('password_pair_required', '修改密码需要同时提供当前密码和新密码')
   }
 
-  if (newPassword !== undefined || currentPassword !== undefined) {
-    if (!newPassword || !currentPassword) {
-      throw badRequest('password_pair_required', '修改密码需要同时提供当前密码和新密码')
-    }
+  if (changingPassword) {
     await changeOwnPassword(id, currentPassword, newPassword)
     const { token } = createSession(id)
     setSessionCookie(res, token)
+    hub.disconnectUser(id)
+  }
+
+  if (nextName !== null) {
+    const updated = updateDisplayNameOf(id, nextName)
+    // 在线名单上缓存的还是旧名字，得同步过去
+    hub.updateUser(toPublicUser(updated))
   }
 
   res.json({ ok: true, user: toPublicUser(findUserById(id)) })

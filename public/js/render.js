@@ -115,12 +115,9 @@ function goneBlock(kind, name) {
 function renderAttachment(message) {
   const wrap = el('div', 'att')
   wrap.dataset.fileId = String(message.file.id)
-  // 过期是事后发生的，那时消息对象早已不在手边，把这两项存进 DOM 备用
-  wrap.dataset.fileName = message.file.name
-  wrap.dataset.fileKind = KIND_MARK[message.file.category] ?? 'BIN'
 
   if (message.file.expired || !message.file.url) {
-    wrap.append(goneBlock(wrap.dataset.fileKind, message.file.name))
+    wrap.append(goneBlock(KIND_MARK[message.file.category] ?? 'BIN', message.file.name))
     return wrap
   }
 
@@ -201,7 +198,7 @@ export function renderRow(message, previous, meId) {
   const bubble = el('div', message.source === 'api' ? 'bubble relay' : 'bubble')
   bubble.title = formatStamp(message.createdAt)
 
-  // kind='code' 是外部客户端仍可发的整条代码消息；网页端发的一律是 text
+  // kind='code' 是接口层保留的整条代码消息形态；网页端发的一律是 text，围栏在正文里
   if (message.kind === 'code') bubble.append(renderCodeSlab(message.body, message.lang))
   else if (message.kind === 'file' && message.file) bubble.append(renderAttachment(message))
   else if (message.body) bubble.append(renderBody(message.body))

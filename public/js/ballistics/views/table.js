@@ -36,10 +36,12 @@ function rows(session) {
     }
   }
 
+  // 排序键是护甲等级，不是列下标：阶梯缺了某一级时两者对不上
   const { key, asc } = session.tableSort
-  const column = key === 'cur' ? session.currentLevel : (typeof key === 'number' ? key : null)
+  const level = key === 'cur' ? session.currentLevel : (typeof key === 'number' ? key : null)
+  const column = level === null ? -1 : session.ladder.findIndex((step) => step.level === level)
   const sortValue = (row) => {
-    if (column === null) return row.weapon.name
+    if (column < 0) return row.weapon.name
     const sol = row.tiers[column]
     const value = session.metric === 'shots' ? sol.shots : sol.time
     if (!Number.isFinite(value)) return 1e12
@@ -126,7 +128,8 @@ export function renderTable(session) {
     )
     tr.append(nameCell, roundCell)
 
-    row.tiers.forEach((sol, level) => {
+    row.tiers.forEach((sol, index) => {
+      const { level } = session.ladder[index]
       const band = session.metric === 'shots' ? shotBand(sol.shots) : timeBand(sol.time)
       const current = level === session.currentLevel && session.loads.includes(row.round)
       const finite = Number.isFinite(sol.shots)

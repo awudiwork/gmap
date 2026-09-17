@@ -188,6 +188,29 @@ test('组合展开：不卖所选弹种的枪只出它自己的弹', () => {
   assert.equal(rows.find((row) => row.slug === 'm4').round, 'HollowPoint')
 })
 
+test('上游数据缺字段时不算出 NaN', () => {
+  // 护甲少了 reduction：按 0 减伤算，而不是让 NaN 一路传到界面
+  const armour = data.armour.map((item) => (item.id === DEFAULT.armour ? { ...item, reduction: undefined } : item))
+  const sol = solve({ ...data, armour }, weapon('m4'), DEFAULT)
+  assert.ok(Number.isFinite(sol.damage) && Number.isFinite(sol.shots))
+  assert.equal(sol.factors.reduction, 0)
+
+  // tier / covers 缺失也不抛错
+  const broken = { ...data, armour: data.armour.map((item) => ({ ...item, tier: undefined, covers: undefined })) }
+  assert.doesNotThrow(() => ladder(broken))
+  assert.doesNotThrow(() => solve(broken, weapon('m4'), DEFAULT))
+})
+
+test('飞行时间表按 slug 缓存，漏掉 id 的枪不会串表', () => {
+  const m4 = weapon('m4')
+  const calibre = data.calibres[m4.calibre]
+  const slow = { ...m4, id: undefined, slug: 'm4-slow', muzzleVelocity: 300 }
+  const fast = { ...m4, id: undefined, slug: 'm4-fast', muzzleVelocity: 900 }
+  const slowTime = flightTimeMs(data, slow, m4.calibre, calibre, 200)
+  const fastTime = flightTimeMs(data, fast, m4.calibre, calibre, 200)
+  assert.ok(slowTime > fastTime * 2, `初速不同的枪飞行时间应当不同：${slowTime} vs ${fastTime}`)
+})
+
 test('格式化数字去掉尾零', () => {
   assert.equal(formatNumber(28), '28')
   assert.equal(formatNumber(11.2, 1), '11.2')

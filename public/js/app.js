@@ -31,11 +31,18 @@ const state = {
   last: null,
   lastDay: null,
   oldestId: null,
+  /** 流里最新一条的 id，断线重连后从它往后补 */
+  newestId: null,
   hasMore: true,
   loadingMore: false,
+  /** 正在拉某个频道的历史；期间到达的实时消息先攒着，历史画完再补进去 */
+  loading: false,
+  pending: [],
   retentionHours: 12,
   room: 'all',
   rooms: [],
+  /** 服务端进程标识。变了说明服务重启过，页面代码可能已经更新 */
+  bootId: null,
 }
 
 /** 频道栏的句柄，切换和未读标记都走它 */
@@ -113,8 +120,15 @@ const clearPlaceholder = () => {
   for (const node of logInner.querySelectorAll('.log-void, .sk-row')) node.remove()
 }
 
-/** 追加一行到底部，跨天时先插日期标记 */
+const hasRow = (id) => logInner.querySelector(`.turn[data-message-id="${CSS.escape(String(id))}"]`) !== null
+
+/**
+ * 追加一行到底部，跨天时先插日期标记。
+ * 同一条消息只画一次：重连补拉和实时广播可能带来同一条，按 id 去重。
+ * @returns {boolean} 是否真的画了
+ */
 function appendRow(message, { fresh = false } = {}) {
+  if (hasRow(message.id)) return false
   clearPlaceholder()
   const key = dayKey(message.createdAt)
   if (key !== state.lastDay) {
@@ -125,6 +139,8 @@ function appendRow(message, { fresh = false } = {}) {
   if (fresh) row.classList.add('fresh')
   logInner.append(row)
   state.last = message
+  if (state.newestId === null || message.id > state.newestId) state.newestId = message.id
+  return true
 }
 
 /** 向上补历史：整块构建后一次插入，并补偿滚动位置避免视觉跳动 */
@@ -233,9 +249,14 @@ function handleIncoming(message) {
     games?.mark(message.room)
     return
   }
+  // 历史还在拉：先攒着。现在画上去也会被历史整块覆盖掉
+  if (state.loading) {
+    state.pending.push(message)
+    return
+  }
 
   const stick = atBottom()
-  appendRow(message, { fresh: true })
+  if (!appendRow(message, { fresh: true })) return
 
   if (stick) {
     toBottom()
@@ -250,9 +271,38 @@ function handleIncoming(message) {
   }
 }
 
+/**
+ * 补拉断线期间漏掉的消息。连接建立（含重连）时调用：
+ * 从流里最新一条往后拉，逐条按实时消息处理，该弹图的照样弹。
+ */
+async function backfill() {
+  if (state.loading) return
+  const gen = generation
+  try {
+    const { messages } = await api.messages({ room: state.room, after: state.newestId ?? 0, limit: 200 })
+    if (gen !== generation) return
+    for (const message of messages) handleIncoming(message)
+  } catch {
+    // 补不到就等下一次重连；实时通道已经在了，最多漏掉断线那一段
+  }
+}
+
+function handleHello(data) {
+  renderRoster(data.online)
+  if (state.bootId !== null && data.bootId !== state.bootId) {
+    // 服务端重启过，多半是部署了新代码。旧页面继续跑会和新接口对不上，自己刷新一遍
+    location.reload()
+    return
+  }
+  state.bootId = data.bootId ?? null
+  backfill()
+}
+
 function handleEvent(event) {
   switch (event.type) {
     case 'hello':
+      handleHello(event.data)
+      break
     case 'presence':
       renderRoster(event.data.online)
       break
@@ -322,13 +372,16 @@ async function openRoom(id) {
   state.last = null
   state.lastDay = null
   state.oldestId = null
+  state.newestId = null
   state.hasMore = true
   state.loadingMore = false
+  state.loading = true
+  state.pending = []
 
   const room = state.rooms.find((item) => item.id === id)
   document.getElementById('room-name').textContent = room?.name ?? id
   document.getElementById('room-hint').textContent = room?.hint ?? ''
-  // 频道专属工具挂在标题左边，换频道就换一套
+  // 频道专属工具挂在标题右边，换频道就换一套
   mountTools(document.getElementById('room-tools'), room)
   games?.setCurrent(id)
   tailHint.classList.add('hidden')
@@ -338,6 +391,7 @@ async function openRoom(id) {
     const { messages } = await api.messages({ room: id })
     // 拉的过程中又切走了，结果作废
     if (gen !== generation) return
+    state.loading = false
     if (messages.length > 0) {
       state.oldestId = messages[0].id
       logInner.replaceChildren(buildRetentionNote())
@@ -347,8 +401,13 @@ async function openRoom(id) {
       state.hasMore = false
       showEmpty({ onKeys: openKeys })
     }
+    // 拉历史期间到达的实时消息，现在补进去（历史里已有的会被去重）
+    const pending = state.pending
+    state.pending = []
+    for (const message of pending) handleIncoming(message)
   } catch (err) {
     if (gen !== generation) return
+    state.loading = false
     showLoadError(err instanceof ApiError ? err.message : '连不上服务端，检查网络后重新加载。')
   }
 }
@@ -458,10 +517,12 @@ async function boot() {
     return
   }
 
+  // 实时通道先于历史建立：期间到达的消息由 openRoom 攒着，历史画完再补，
+  // 反过来的话，历史拉完到通道建好之间的那条就永远丢了
+  connectRealtime({ onEvent: handleEvent, onStatus: setLinkState })
   await openRoom(state.room)
 
   initCommand(() => state.room)
-  connectRealtime({ onEvent: handleEvent, onStatus: setLinkState })
 
   // 带着工具链接进来的（分享、刷新），直接把工具打开
   openToolFromHash().catch(() => toast('工具加载失败，刷新后再试', 'bad'))

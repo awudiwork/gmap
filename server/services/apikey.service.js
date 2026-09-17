@@ -10,6 +10,7 @@
 import crypto from 'node:crypto'
 import { db } from '../db.js'
 import { badRequest, notFound } from '../lib/errors.js'
+import { sha256 } from '../lib/hash.js'
 import { findActiveUserById } from './user.service.js'
 
 const KEY_NAMESPACE = 'gmap_'
@@ -23,10 +24,7 @@ const selectByHash = db.prepare('SELECT * FROM api_keys WHERE key_hash = ?')
 const selectById = db.prepare('SELECT * FROM api_keys WHERE id = ? AND user_id = ?')
 const selectByUser = db.prepare('SELECT * FROM api_keys WHERE user_id = ? ORDER BY id DESC')
 const removeKey = db.prepare('DELETE FROM api_keys WHERE id = ?')
-const removeKeysOfUser = db.prepare('DELETE FROM api_keys WHERE user_id = ?')
 const touchUsed = db.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?')
-
-const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex')
 
 function toDto(row) {
   return {
@@ -65,11 +63,6 @@ export function deleteApiKey(userId, id) {
   if (!row) throw notFound('key_not_found', '找不到这枚 Key')
   removeKey.run(row.id)
   return { id: row.id, name: row.name, prefix: row.key_prefix }
-}
-
-/** 注销账号时连带清掉他名下的全部 Key */
-export function deleteKeysOfUser(userId) {
-  return removeKeysOfUser.run(userId).changes
 }
 
 /**

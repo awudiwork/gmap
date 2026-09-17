@@ -11,9 +11,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 
-dotenv.config()
-
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+// 明确指到项目根目录的 .env。dotenv 默认按进程工作目录找，
+// 用 pm2 / 计划任务从别的目录启动时会一个都读不到，然后带着默认值静默跑起来
+dotenv.config({ path: path.join(ROOT, '.env'), quiet: true })
 
 /**
  * 已经改名的配置项。留着旧名默默用默认值，比起不了服务更糟：
@@ -62,16 +64,48 @@ function readString(name, fallback = '') {
   return raw === undefined ? fallback : raw.trim()
 }
 
+/** a 是否等于 b 或在 b 里面 */
+const within = (a, b) => {
+  const rel = path.relative(b, a)
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+/**
+ * 上传目录会被孤儿扫描清理：目录里任何不在 files 表里、且超过一小时的文件都会被删。
+ * 它要是和数据目录或项目目录有重叠，扫描就会把数据库或代码当孤儿删掉。
+ * 这种误配只在一小时后爆发，且不可恢复，必须在启动时就拦住。
+ */
+function assertUploadDirIsolated(uploadDir, dataDir) {
+  if (within(uploadDir, dataDir) || within(dataDir, uploadDir)) {
+    throw new Error(`配置 UPLOAD_DIR（${uploadDir}）不能与 DATA_DIR（${dataDir}）相同或互相包含`)
+  }
+  if (within(ROOT, uploadDir)) {
+    throw new Error(`配置 UPLOAD_DIR（${uploadDir}）不能是项目目录或它的上级`)
+  }
+  for (const reserved of ['server', 'public', 'tests', 'scripts', 'node_modules']) {
+    if (within(uploadDir, path.join(ROOT, reserved))) {
+      throw new Error(`配置 UPLOAD_DIR（${uploadDir}）不能落在项目代码目录里`)
+    }
+  }
+}
+
+const dataDir = readPath('DATA_DIR', './data')
+const uploadDir = readPath('UPLOAD_DIR', './uploads')
+assertUploadDirIsolated(uploadDir, dataDir)
+
+const retentionHours = readInt('RETENTION_HOURS', 12, { min: 1, max: 24 * 365 })
+
 export const config = Object.freeze({
   root: ROOT,
   host: readString('HOST', '0.0.0.0'),
   port: readInt('PORT', 3000, { min: 1, max: 65535 }),
 
-  dataDir: readPath('DATA_DIR', './data'),
-  uploadDir: readPath('UPLOAD_DIR', './uploads'),
+  dataDir,
+  uploadDir,
 
   // 保留期管的是房间里的一切：消息、代码块、附件
-  retentionHours: readInt('RETENTION_HOURS', 12, { min: 1, max: 24 * 365 }),
+  retentionHours,
+  retentionMs: retentionHours * 60 * 60 * 1000,
   cleanupIntervalMinutes: readInt('CLEANUP_INTERVAL_MINUTES', 10, { min: 1, max: 1440 }),
   maxUploadBytes: readInt('MAX_UPLOAD_MB', 25, { min: 1, max: 2048 }) * 1024 * 1024,
 
@@ -88,6 +122,8 @@ export const config = Object.freeze({
   uploadRatePerMinute: readInt('UPLOAD_RATE_PER_MINUTE', 30, { min: 1, max: 6000 }),
   // 两次上传之间的最小间隔，挡住热键连按。0 表示不限
   uploadMinIntervalMs: readInt('UPLOAD_MIN_INTERVAL_MS', 1000, { min: 0, max: 60_000 }),
+  // 同一来源 IP 每分钟允许的登录 / 注册尝试次数
+  loginRatePerMinute: readInt('LOGIN_RATE_PER_MINUTE', 10, { min: 1, max: 6000 }),
 
   // Wardogs 弹道数据多久去上游刷新一次。0 表示不联网，只用仓库里的快照
   ballisticsRefreshHours: readInt('WARDOGS_BALLISTICS_REFRESH_HOURS', 24, { min: 0, max: 24 * 365 }),

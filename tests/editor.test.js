@@ -6,7 +6,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { serialize } from '../public/js/editor.js'
+import { collapseBlankLines, serialize } from '../public/js/editor.js'
 
 const text = (data) => ({ nodeType: 3, data })
 const tag = (nodeName, ...childNodes) => ({ nodeType: 1, nodeName, childNodes })
@@ -37,6 +37,15 @@ test('代码块序列化成围栏', () => {
 
 test('代码块末尾多余的换行被吃掉，不会产出空行', () => {
   assert.equal(serialize(tag('PRE', text('const a = 1\n'))), '\n```\nconst a = 1\n```\n')
+})
+
+test('压缩连续空行时不动代码块里的内容', () => {
+  const outside = '第一段\n\n\n\n第二段'
+  assert.equal(collapseBlankLines(outside), '第一段\n\n第二段')
+
+  const code = 'a\n\n\n\nb'
+  const withFence = `说明\n\n\n\n\`\`\`\n${code}\n\`\`\`\n\n\n\n尾巴`
+  assert.equal(collapseBlankLines(withFence), `说明\n\n\`\`\`\n${code}\n\`\`\`\n\n尾巴`, '围栏里的空行是代码的一部分')
 })
 
 test('BR 变成换行', () => {

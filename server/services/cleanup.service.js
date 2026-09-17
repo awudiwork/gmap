@@ -34,6 +34,13 @@ const selectStoredName = db.prepare('SELECT stored_name FROM files WHERE id = ?'
 const deleteMessage = db.prepare('DELETE FROM messages WHERE id = ?')
 const deleteFileRow = db.prepare('DELETE FROM files WHERE id = ?')
 const selectLiveStoredNames = db.prepare('SELECT stored_name FROM files')
+// 入库了却没有任何消息引用的文件：上传落库和建消息不在一个事务里，
+// 中间进程崩掉就会留下这种行。它既不会随消息过期，又会保护着磁盘上的孤儿
+const selectUnreferencedFiles = db.prepare(`
+  SELECT f.id, f.stored_name FROM files f
+  WHERE f.created_at < ? AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.file_id = f.id)
+  LIMIT ${BATCH}
+`)
 
 /**
  * 删掉过期的消息及其附件。
@@ -48,7 +55,7 @@ const selectLiveStoredNames = db.prepare('SELECT stored_name FROM files')
  * @returns {number} 补了多少条
  */
 export function backfillExpiry() {
-  const changed = backfill.run(config.retentionHours * 60 * 60 * 1000).changes
+  const changed = backfill.run(config.retentionMs).changes
   if (changed > 0) console.log(`[cleanup] 已为 ${changed} 条历史消息补上到期时间`)
   return changed
 }
@@ -87,6 +94,22 @@ async function purgeExpired() {
   }
 }
 
+/**
+ * 库里有、却没有消息引用的文件。宽限一小时：刚上传完、消息还没建好的那一瞬间不能删。
+ * @returns {Promise<number>} 删掉的条数
+ */
+async function removeUnreferencedFiles() {
+  const rows = selectUnreferencedFiles.all(Date.now() - ORPHAN_GRACE_MS)
+  if (rows.length === 0) return 0
+  db.transaction(() => {
+    for (const row of rows) deleteFileRow.run(row.id)
+  })()
+  for (const row of rows) {
+    await fsp.unlink(filePath(row.stored_name)).catch(() => {})
+  }
+  return rows.length
+}
+
 /** 磁盘上有、库里没有的文件。上传落盘后入库失败会留下这种残留 */
 async function removeOrphanFiles() {
   let entries
@@ -122,7 +145,9 @@ async function removeOrphanFiles() {
  */
 export async function runCleanup() {
   const { ids, rooms, files } = await purgeExpired()
-  const orphans = await removeOrphanFiles()
+  // 先清没人引用的库记录，它们的磁盘文件才会在下一步被当成孤儿
+  const unreferenced = await removeUnreferencedFiles()
+  const orphans = (await removeOrphanFiles()) + unreferenced
   const sessions = purgeExpiredSessions()
 
   if (ids.length > 0) {
