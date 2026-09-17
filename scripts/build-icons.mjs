@@ -31,6 +31,15 @@ const ICONS = [
   'check', 'warning-circle', // toast 的两种结果
   'trash', 'plus', 'arrow-counter-clockwise', // 删除 / 新建 / 重置
   'corners-out', 'magnifying-glass-plus', 'arrow-square-out', 'x', // 看图器
+
+  // 伤害计算器
+  'calculator',                                   // 标题栏上的入口
+  'caret-down', 'caret-up', 'caret-up-down',      // 折叠 / 排序
+  'magnifying-glass',                             // 选枪搜索
+  'shield-check', 'shield-slash',                 // 护甲挡住 / 被打穿
+  'crosshair-simple', 'timer',                    // 伤害 / 时间
+  'person', 'chart-line',                         // 视图标签
+  'link-simple',                                  // 分享链接
 ]
 
 function resolveAssetsDir() {

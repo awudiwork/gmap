@@ -1,0 +1,114 @@
+{
+  "a-91": {
+    "icon": "t_ui_vendor_wepn_004",
+    "unlock": 0
+  },
+  "ak74": {
+    "icon": "t_ui_vendor_wepn_001v2",
+    "unlock": 3
+  },
+  "amp-9": {
+    "icon": "t_ui_vendor_wepn_014",
+    "unlock": 0
+  },
+  "amr-50": {
+    "icon": "t_ui_vendor_wepn_024",
+    "unlock": 35
+  },
+  "bmr-308": {
+    "icon": "t_ui_weapon_rfb_bc",
+    "unlock": 30
+  },
+  "bushmaster-m17s": {
+    "icon": "t_ui_vendor_wepn_033",
+    "unlock": 0
+  },
+  "compound-bow": {
+    "icon": "t_ui_weapon_bow_bc",
+    "unlock": 17
+  },
+  "deagle": {
+    "icon": "t_ui_vendor_wepn_027",
+    "unlock": 85
+  },
+  "fal": {
+    "icon": "t_ui_vendor_wepn_030",
+    "unlock": 35
+  },
+  "galil": {
+    "icon": "t_ui_vendor_wepn_029",
+    "unlock": 10
+  },
+  "ggx-18": {
+    "icon": "t_ui_vendor_wepn_032",
+    "unlock": 70
+  },
+  "judge": {
+    "icon": "t_ui_vendor_wepn_020",
+    "unlock": 18
+  },
+  "kh-2002": {
+    "icon": "t_ui_vendor_wepn_003",
+    "unlock": 0
+  },
+  "m1911": {
+    "icon": "t_ui_vendor_wepn_026",
+    "unlock": 40
+  },
+  "m249-saw": {
+    "icon": "t_ui_vendor_wepn_009",
+    "unlock": 15
+  },
+  "m4": {
+    "icon": "t_ui_vendor_wepn_002",
+    "unlock": 20
+  },
+  "m500": {
+    "icon": "t_ui_vendor_wepn_011",
+    "unlock": 10
+  },
+  "mk22": {
+    "icon": "t_ui_vendor_wepn_018",
+    "unlock": 25
+  },
+  "mosin-nagant": {
+    "icon": "t_ui_vendor_wepn_017",
+    "unlock": 10
+  },
+  "mp43": {
+    "icon": "t_ui_vendor_wepn_021",
+    "unlock": 0
+  },
+  "mp5": {
+    "icon": "t_ui_vendor_wepn_028",
+    "unlock": 15
+  },
+  "pp-19-vityaz": {
+    "icon": "t_ui_vendor_wepn_023",
+    "unlock": 4
+  },
+  "scout-rifle-td": {
+    "icon": "t_ui_wepn_035",
+    "unlock": 0
+  },
+  "sks": {
+    "icon": "t_ui_vendor_wepn_007",
+    "unlock": 5
+  },
+  "super-45": {
+    "icon": "t_ui_vendor_wepn_006",
+    "unlock": 35
+  },
+  "sv98": {
+    "icon": "t_ui_vendor_wepn_008",
+    "unlock": 19
+  },
+  "svd": {
+    "icon": "t_ui_vendor_wepn_015",
+    "unlock": 12
+  },
+  "t-21": {
+    "icon": "t_ui_vendor_wepn_005",
+    "unlock": 0
+  }
+}

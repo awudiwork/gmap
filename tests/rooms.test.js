@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_ROOM, isRoom, normalizeRoom, ROOMS } from '../server/lib/rooms.js'
+import { DEFAULT_ROOM, isRoom, normalizeRoom, ROOMS, TOOL_IDS } from '../server/lib/rooms.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -40,6 +40,16 @@ test('声明了图标的房间，图标文件真的存在', () => {
     assert.ok(fs.existsSync(file), `${room.id} 的图标文件不存在：${room.icon}`)
     assert.ok(fs.statSync(file).size > 0, `${room.id} 的图标是空文件`)
   }
+})
+
+test('每个房间挂的工具都是前端认识的', () => {
+  // 清单里写了个前端没有的工具 id，标题栏上只会静静地少一个按钮，没人会发现
+  const known = new Set(TOOL_IDS)
+  for (const room of ROOMS) {
+    assert.ok(Array.isArray(room.tools), `${room.id} 的 tools 必须是数组，没有工具就给空数组`)
+    for (const tool of room.tools) assert.ok(known.has(tool), `${room.id} 挂了前端不认识的工具 ${tool}`)
+  }
+  assert.ok(ROOMS.find((room) => room.id === 'wardogs').tools.includes('ballistics'))
 })
 
 test('认不出来的房间落到默认房间，而不是报错', () => {

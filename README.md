@@ -248,6 +248,25 @@ response.EnsureSuccessStatusCode();
 截图客户端推图时带上 `room` 字段就能指定频道，不带或者传了不认识的值都会落到 `all`：
 老版本客户端推错地方，也好过把图推丢。
 
+### 频道专属工具
+
+每个频道可以在标题栏左边挂自己的工具按钮。清单在 `server/lib/rooms.js` 的 `tools` 字段里，
+前端 `public/js/tools.js` 按 id 找模块，点了才按需加载，不拖慢聊天室首屏。
+
+**Wardogs：伤害计算器**（`tools: ['ballistics']`）。功能和 [metaforge.app 的弹道页](https://metaforge.app/wardogs/ballistics)
+一致，界面中文，武器名、口径和弹种代号（FMJ / HP / AP）沿用游戏写法：
+
+- 左栏设条件：最多五把枪（霰弹枪可换鹿弹 / 独头弹）、命中部位（点人形图）、弹种（可多选）、头盔与护甲等级、距离
+- 名次卡按击杀时间排名，给出弹数、时间、每发伤害，以及护甲是撑到最后还是中途被打穿
+- 五个视图：**击杀弹数**（全部武器 x 五个护甲等级的表，按弹数或时间着色，点一格就套用那格的条件）、
+  **逐发比较**（人形图逐部位上色，每发伤害的乘法链摊开）、**部位伤害**、**距离曲线**（谁在哪段距离杀得最快）、**弹药**（每种口径的系数）
+- 状态记在浏览器本地和地址栏 hash 里，「分享此视图」复制的链接打开就是同一个视图，原站链接里的参数（`w` / `armour` / `hit` / `round` / `range` / `view` 等）也认
+
+数据来源：`GET /api/wardogs/ballistics`（需登录）代理 metaforge 的公开接口，服务端按 `WARDOGS_BALLISTICS_REFRESH_HOURS` 缓存，
+拉不到时退回仓库自带的快照 `server/assets/wardogs/ballistics.json`。武器图标和解锁等级来自另一份很少变的快照 `weapons.json`，
+图标文件已经放在 `public/wardogs/icons/`，不依赖外站。计算引擎在 `public/js/ballistics/engine.js`，
+`tests/ballistics-engine.test.js` 用原站页面上的数字做基准，公式抄错一步就会红。
+
 ## 网页端布局
 
 ```
@@ -398,6 +417,7 @@ response.EnsureSuccessStatusCode();
 | `COOKIE_SECURE` | `false` | 用 HTTPS 部署时改成 `true` |
 | `UPLOAD_MIN_INTERVAL_MS` | `1000` | 两次上传的最小间隔，挡热键连按。`0` 不限制，只对 API Key 生效 |
 | `UPLOAD_RATE_PER_MINUTE` | `30` | 每分钟上传次数上限，挡持续刷屏 |
+| `WARDOGS_BALLISTICS_REFRESH_HOURS` | `24` | Wardogs 弹道数据多久去 metaforge 刷新一次。`0` 不联网，只用仓库自带的快照 |
 
 ---
 
@@ -436,11 +456,15 @@ server/
   index.js             进程入口：引导管理员、监听、优雅退出
   lib/                 机制层：错误语义、Cookie、限流、类型嗅探
   middleware/          策略层：鉴权、同源校验
-  routes/              接口层：auth / admin / keys / messages
-  services/            领域层：user / session / apikey / file / message / cleanup
+  routes/              接口层：auth / admin / keys / messages / wardogs
+  services/            领域层：user / session / apikey / file / message / cleanup / ballistics
                        依赖方向单向：user → session，会话层只认 token 不认用户表
+  assets/wardogs/      弹道数据与武器图标清单的快照，上游拉不到时的兜底
   ws/hub.js            WebSocket 广播中心（单向下行）
 public/                网页端，无构建步骤，原生 ES modules
+  js/tools.js          频道专属工具的注册表，按需加载
+  js/ballistics/       Wardogs 伤害计算器：engine（纯计算）/ state（状态与链接）/ views（五个视图）
+  wardogs/icons/       武器与弹药图标
 tests/                 端到端回归测试（真实 HTTP + 真实 SQLite）
 ```
 

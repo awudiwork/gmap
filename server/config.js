@@ -88,4 +88,7 @@ export const config = Object.freeze({
   uploadRatePerMinute: readInt('UPLOAD_RATE_PER_MINUTE', 30, { min: 1, max: 6000 }),
   // 两次上传之间的最小间隔，挡住热键连按。0 表示不限
   uploadMinIntervalMs: readInt('UPLOAD_MIN_INTERVAL_MS', 1000, { min: 0, max: 60_000 }),
+
+  // Wardogs 弹道数据多久去上游刷新一次。0 表示不联网，只用仓库里的快照
+  ballisticsRefreshHours: readInt('WARDOGS_BALLISTICS_REFRESH_HOURS', 24, { min: 0, max: 24 * 365 }),
 })

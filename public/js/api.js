@@ -54,6 +54,9 @@ export const api = {
 
   rooms: () => get('/api/rooms'),
 
+  /** Wardogs 伤害计算器的数据：弹道数值 + 武器图标与解锁等级 */
+  wardogsBallistics: () => get('/api/wardogs/ballistics'),
+
   messages: ({ room, before, limit } = {}) => {
     const query = new URLSearchParams()
     if (room) query.set('room', room)

@@ -10,6 +10,7 @@ import { isMuted, playBeep, refreshMutedNames, settings, shouldAutoOpen, toggleM
 import { initCommand } from './composer.js'
 import { openKeys, openProfile, openSettings, openUsers } from './panels.js'
 import { mountGames, readLastRoom } from './rooms.js'
+import { mountTools, openToolFromHash, roomFromHash } from './tools.js'
 import { avatarInk, avatarLetter, dayKey, el, icon, toast, toggle } from './ui.js'
 
 /** 距底部小于这个距离就认为在看最新，新消息自动跟随 */
@@ -327,6 +328,8 @@ async function openRoom(id) {
   const room = state.rooms.find((item) => item.id === id)
   document.getElementById('room-name').textContent = room?.name ?? id
   document.getElementById('room-hint').textContent = room?.hint ?? ''
+  // 频道专属工具挂在标题左边，换频道就换一套
+  mountTools(document.getElementById('room-tools'), room)
   games?.setCurrent(id)
   tailHint.classList.add('hidden')
 
@@ -440,8 +443,9 @@ async function boot() {
   try {
     const { rooms, defaultRoom } = await api.rooms()
     state.rooms = rooms
-    // 上次待的频道可能已经从清单里撤掉了，那就回到默认频道
-    const saved = readLastRoom(defaultRoom)
+    // 上次待的频道可能已经从清单里撤掉了，那就回到默认频道。
+    // 分享链接里指明了频道就优先去那儿，关掉工具后人在对的地方
+    const saved = roomFromHash() ?? readLastRoom(defaultRoom)
     state.room = rooms.some((item) => item.id === saved) ? saved : defaultRoom
     games = mountGames({
       host: document.getElementById('games'),
@@ -458,6 +462,9 @@ async function boot() {
 
   initCommand(() => state.room)
   connectRealtime({ onEvent: handleEvent, onStatus: setLinkState })
+
+  // 带着工具链接进来的（分享、刷新），直接把工具打开
+  openToolFromHash().catch(() => toast('工具加载失败，刷新后再试', 'bad'))
 
   log.addEventListener('scroll', () => {
     if (log.scrollTop < 120) loadMore()

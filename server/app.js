@@ -16,6 +16,7 @@ import { adminRouter } from './routes/admin.routes.js'
 import { authRouter } from './routes/auth.routes.js'
 import { keyRouter } from './routes/key.routes.js'
 import { messageRouter } from './routes/message.routes.js'
+import { wardogsRouter } from './routes/wardogs.routes.js'
 import { hub } from './ws/hub.js'
 
 /**
@@ -58,6 +59,7 @@ export function createApp() {
   app.use('/api/auth', authRouter)
   app.use('/api/admin', adminRouter)
   app.use('/api/keys', keyRouter)
+  app.use('/api/wardogs', wardogsRouter)
   app.use('/api', messageRouter)
 
   // 未匹配的 /api 请求返回 JSON 404，不要落到静态资源里

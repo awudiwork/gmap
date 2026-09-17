@@ -126,6 +126,41 @@ test('脚本取用的 id 在页面上都存在', () => {
   assert.deepEqual(missing, [], missing.join('\n'))
 })
 
+/**
+ * 某个样式文件里"裸"定义的类（选择器就是 .x，没有任何限定），
+ * 会命中页面上任何叫 x 的元素。两份样式表各自裸定义的类，不能在对方那边被用到，
+ * 否则表格里 tr.picked 会被左栏 ul.picked 的 flex 布局拆成一列，这种事只有肉眼能发现。
+ */
+test('两份样式表之间没有裸类名撞车', () => {
+  const read = (name) => fs.readFileSync(path.join(PUBLIC, 'css', name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const sheets = { 'style.css': read('style.css'), 'ballistics.css': read('ballistics.css') }
+
+  // 有意共用的基础件：弹层、图标、按钮变体、空态；.bar 是计算器给聊天室标题栏加工具按钮时引用的
+  const shared = new Set(['veil', 'hidden', 'icon', 'key', 'bare', 'slim', 'only-narrow', 'spacer', 'log-void', 'head', 'acts', 'bad', 'bar'])
+
+  const bareClasses = (css) => {
+    const found = new Set()
+    for (const match of css.matchAll(/(^|[}\n])\s*([^{}]+)\{/g)) {
+      for (const selector of match[2].split(',')) {
+        const single = /^\s*\.([a-z0-9-]+)(?:[.:][^\s>+~]*)?\s*$/.exec(selector)
+        if (single) found.add(single[1])
+      }
+    }
+    return found
+  }
+  const usesClass = (css, name) => new RegExp(`\\.${name}(?![a-z0-9-])`).test(css)
+
+  const offenders = []
+  for (const [name, css] of Object.entries(sheets)) {
+    const other = Object.entries(sheets).find(([otherName]) => otherName !== name)
+    for (const cls of bareClasses(css)) {
+      if (shared.has(cls)) continue
+      if (usesClass(other[1], cls)) offenders.push(`.${cls} 在 ${name} 里是裸定义，${other[0]} 里也用到了它`)
+    }
+  }
+  assert.deepEqual(offenders, [], offenders.join('\n'))
+})
+
 test('界面文案里没有装饰性箭头', () => {
   // 按钮和链接文字后缀一个 → 是最典型的生成痕迹
   const offenders = []
