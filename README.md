@@ -273,6 +273,18 @@ response.EnsureSuccessStatusCode();
 图标文件已经放在 `public/wardogs/icons/`，不依赖外站。计算引擎在 `public/js/ballistics/engine.js`，
 `tests/ballistics-engine.test.js` 用原站页面上的数字做基准，公式抄错一步就会红。
 
+**Wardogs：情报面板**（`tools: ['intel']`）。一个弹层三个标签：
+
+| 标签 | 内容 | 接口 | 数据 |
+| --- | --- | --- | --- |
+| 服务器 | Steam 在线人数、服务器内玩家与容量、各区（按亚洲 / 大洋洲 / 北美 / 欧洲 / 南美分组）服务器数与在线、各地图人数；点一个区看它的服务器清单（编号、人数、地图、硬核 / 纯步兵、天气、官方、密码） | `GET /api/wardogs/status`、`GET /api/wardogs/status/servers?zone=asia-east` | 上游 2 MB 的全量清单在服务端压成几 KB 汇总，缓存 1 分钟，面板开着每分钟自动刷 |
+| 金条 | 一根金条的现金价、历史最低最高、7 天 / 30 天 / 90 天 / 1 年涨跌、折线图（30 天 / 90 天 / 全部，悬停读数） | `GET /api/wardogs/market` | 缓存 10 分钟 |
+| 进度 XP | 六个兵种 1 到 100 级的累计 XP、本级所需和该级解锁；行动奖励表（XP / 现金 / 重复递减），可按分组过滤 | `GET /api/wardogs/progression` | 缓存 24 小时，有快照 `server/assets/wardogs/progression.json` 兜底 |
+
+状态和汇率是实时数据，没有快照：上游拉不到时接口回 `503 upstream_unavailable`，面板如实显示拉不到，不编数。
+上游暂时挂了但之前拉到过，会继续用上次的并标成"上次取得的"。`WARDOGS_BALLISTICS_REFRESH_HOURS=0` 会让所有 Wardogs 上游数据都不联网：
+弹道和进度表用快照，状态和汇率直接 503。
+
 ## 网页端布局
 
 ```
@@ -438,7 +450,7 @@ response.EnsureSuccessStatusCode();
 | `UPLOAD_MIN_INTERVAL_MS` | `1000` | 两次上传的最小间隔，挡热键连按。`0` 不限制，只对 API Key 生效 |
 | `UPLOAD_RATE_PER_MINUTE` | `30` | 每分钟上传次数上限，挡持续刷屏 |
 | `LOGIN_RATE_PER_MINUTE` | `10` | 同一来源 IP 每分钟的登录 / 注册尝试次数。登录成功**不会**清零，拿一个合法账号刷不掉它 |
-| `WARDOGS_BALLISTICS_REFRESH_HOURS` | `24` | Wardogs 弹道数据多久去 metaforge 刷新一次。`0` 不联网，只用仓库自带的快照 |
+| `WARDOGS_BALLISTICS_REFRESH_HOURS` | `24` | Wardogs 弹道数据多久去 metaforge 刷新一次。`0` 表示所有 Wardogs 上游数据都不联网：弹道和进度表只用仓库自带的快照，服务器状态和金条汇率直接报拉不到 |
 
 `.env` 固定从项目根目录读取，和从哪个目录启动进程无关。
 `ADMIN_USERNAME` 改了之后，旧的管理员账号会在下次启动时降为普通用户，管理员登录名也不允许自助注册占用。
@@ -498,13 +510,15 @@ server/
   lib/                 机制层：错误语义、Cookie、限流、类型嗅探
   middleware/          策略层：鉴权、同源校验
   routes/              接口层：auth / admin / keys / messages / wardogs
-  services/            领域层：user / session / apikey / file / message / cleanup / ballistics
+  services/            领域层：user / session / apikey / file / message / cleanup / ballistics / intel
                        依赖方向单向：user → session，会话层只认 token 不认用户表
-  assets/wardogs/      弹道数据与武器图标清单的快照，上游拉不到时的兜底
+  lib/upstream.js      外部数据源的缓存与快照兜底，Wardogs 的几份数据都走它
+  assets/wardogs/      弹道数据、武器图标清单、进度表的快照，上游拉不到时的兜底
   ws/hub.js            WebSocket 广播中心（单向下行）
 public/                网页端，无构建步骤，原生 ES modules
   js/tools.js          频道专属工具的注册表，按需加载
   js/ballistics/       Wardogs 伤害计算器：engine（纯计算）/ state（状态与链接）/ views（五个视图）
+  js/wardogs/intel.js  Wardogs 情报面板：服务器状态 / 金条汇率 / 进度 XP
   wardogs/icons/       武器与弹药图标
 tests/                 端到端回归测试（真实 HTTP + 真实 SQLite）
 ```

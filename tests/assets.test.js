@@ -133,10 +133,11 @@ test('脚本取用的 id 在页面上都存在', () => {
  */
 test('两份样式表之间没有裸类名撞车', () => {
   const read = (name) => fs.readFileSync(path.join(PUBLIC, 'css', name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-  const sheets = { 'style.css': read('style.css'), 'ballistics.css': read('ballistics.css') }
+  const sheets = { 'style.css': read('style.css'), 'ballistics.css': read('ballistics.css'), 'wardogs.css': read('wardogs.css') }
 
   // 有意共用的基础件：弹层、图标、按钮变体、空态；.bar 是计算器给聊天室标题栏加工具按钮时引用的
-  const shared = new Set(['veil', 'hidden', 'icon', 'key', 'bare', 'slim', 'only-narrow', 'spacer', 'log-void', 'head', 'acts', 'bad', 'bar'])
+  // 弹层（.sheet）和分段选择器（.pick）是情报面板有意复用并加宽的
+  const shared = new Set(['veil', 'hidden', 'icon', 'key', 'bare', 'slim', 'only-narrow', 'spacer', 'log-void', 'head', 'acts', 'bad', 'bar', 'sheet', 'pick'])
 
   const bareClasses = (css) => {
     const found = new Set()
@@ -152,10 +153,12 @@ test('两份样式表之间没有裸类名撞车', () => {
 
   const offenders = []
   for (const [name, css] of Object.entries(sheets)) {
-    const other = Object.entries(sheets).find(([otherName]) => otherName !== name)
-    for (const cls of bareClasses(css)) {
-      if (shared.has(cls)) continue
-      if (usesClass(other[1], cls)) offenders.push(`.${cls} 在 ${name} 里是裸定义，${other[0]} 里也用到了它`)
+    for (const [otherName, otherCss] of Object.entries(sheets)) {
+      if (otherName === name) continue
+      for (const cls of bareClasses(css)) {
+        if (shared.has(cls)) continue
+        if (usesClass(otherCss, cls)) offenders.push(`.${cls} 在 ${name} 里是裸定义，${otherName} 里也用到了它`)
+      }
     }
   }
   assert.deepEqual(offenders, [], offenders.join('\n'))

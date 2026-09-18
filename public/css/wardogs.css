@@ -1,0 +1,89 @@
+/* ═══════════════════════════════════════════════════════════
+   Wardogs 情报面板：服务器状态、金条汇率、进度 XP。
+   走弹层（.sheet）那一套，只是宽一些。类名统一 it- 前缀，避免和主样式撞车。
+   ═══════════════════════════════════════════════════════════ */
+
+.sheet.wide { max-width: 900px; }
+.it-tabs { margin: 0 0 16px; }
+.it-content { min-height: 200px; }
+
+.it-h { font-size: 12px; font-weight: 700; margin: 18px 0 8px; }
+.it-dim { color: var(--dim); font-size: 11px; }
+.it-num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.it-note { margin-top: 16px; font-size: 11px; color: var(--dim); border-top: 1px dashed var(--groove); padding-top: 8px; }
+.it-empty .head { font-size: 14px; font-weight: 700; color: var(--alert); margin-bottom: 6px; }
+.it-empty p { color: var(--mid); margin: 0; }
+
+/* 顶部三个数字 */
+.it-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.it-stat { border: 1px solid var(--groove); background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; min-width: 0; }
+.it-stat b { font-size: 20px; line-height: 1.1; color: var(--fore); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.it-stat-label { font-size: 10px; letter-spacing: 0.06em; color: var(--dim); margin-top: 4px; text-transform: uppercase; }
+.it-stat-sub { font-size: 11px; color: var(--mid); margin-top: 2px; }
+
+/* 表格 */
+.it-scroll { overflow-x: auto; }
+.it-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.it-table th { text-align: left; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--groove); }
+.it-table th.it-num { text-align: right; }
+.it-table td { padding: 6px 8px; border-bottom: 1px solid var(--groove); vertical-align: middle; }
+.it-table tbody tr:last-child td { border-bottom: none; }
+.it-group td { padding-top: 12px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber); border-bottom: none; }
+.it-zone { cursor: pointer; }
+.it-zone:hover, .it-zone:focus-visible { background: var(--raised); outline: none; }
+.it-zone b { color: var(--fore); }
+
+/* 占比条 */
+.it-bar { display: inline-block; width: 64px; height: 6px; background: var(--groove); vertical-align: middle; }
+.it-bar i { display: block; height: 100%; background: var(--amber); }
+.it-bar.wide { width: 100%; flex: 1; }
+
+/* 地图人数 */
+.it-maps { display: flex; flex-direction: column; gap: 6px; }
+.it-map { display: grid; grid-template-columns: 7rem 1fr auto; align-items: center; gap: 10px; font-size: 12px; }
+.it-map-name { font-weight: 700; color: var(--fore); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 服务器清单 */
+.it-head { display: flex; align-items: center; gap: 12px; }
+.it-head .it-h { margin: 0; }
+.it-list { display: flex; flex-direction: column; margin-top: 10px; border: 1px solid var(--groove); }
+.it-server { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 7px 10px; border-bottom: 1px solid var(--groove); font-size: 12px; }
+.it-server:last-child { border-bottom: none; }
+.it-server.full { opacity: 0.6; }
+.it-server-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.it-server-title b { color: var(--fore); font-variant-numeric: tabular-nums; }
+.it-server-title .it-dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.it-server-load { display: flex; align-items: center; gap: 8px; }
+.it-badge { font-size: 10px; letter-spacing: 0.06em; color: var(--amber); border: 1px solid var(--amber-edge); padding: 0 4px; }
+.it-lock { color: var(--dim); }
+
+/* 金条 */
+.it-changes { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.it-change { display: inline-flex; gap: 8px; align-items: baseline; border: 1px solid var(--groove); padding: 4px 10px; font-size: 12px; }
+.it-change b { color: var(--fore); font-variant-numeric: tabular-nums; }
+.it-change.up b { color: #9cbd3c; }
+.it-change.down b { color: var(--alert); }
+.it-spark { display: block; width: 100%; height: auto; margin-top: 10px; border: 1px solid var(--groove); background: var(--panel); cursor: crosshair; }
+.it-spark .area { fill: var(--amber-wash); }
+.it-spark .line { fill: none; stroke: var(--amber); stroke-width: 1.6; }
+.it-spark .label { fill: var(--dim); font-size: 10px; }
+.it-spark .cursor { stroke: var(--mid); stroke-width: 1; stroke-dasharray: 3 3; }
+.it-spark .dot { fill: var(--amber); stroke: var(--void); stroke-width: 2; }
+.it-spark .readout { fill: var(--fore); font-size: 11px; font-weight: 700; }
+
+/* 进度 XP */
+.it-xp .pick { margin-top: 0; margin-bottom: 10px; }
+.it-xp .pick + .pick { margin-left: 0; }
+.it-levels td:last-child { width: 55%; }
+.it-unlocks { display: flex; flex-wrap: wrap; gap: 4px; }
+.it-unlock { font-size: 11px; border: 1px solid var(--groove); padding: 1px 6px; color: var(--mid); white-space: nowrap; }
+.it-groups { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.it-groups .on { border-color: var(--amber-edge); color: var(--amber); }
+
+@media (max-width: 640px) {
+  .it-stats { grid-template-columns: 1fr; }
+  .it-stat b { font-size: 17px; }
+  .it-map { grid-template-columns: 5rem 1fr; }
+  .it-map .it-num { grid-column: 2; }
+  .it-server { grid-template-columns: 1fr; gap: 4px; }
+}

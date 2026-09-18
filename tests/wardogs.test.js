@@ -96,6 +96,38 @@ test('第二次请求命中缓存，仍然是同一份数据', async () => {
   assert.equal(first.payload.fetchedAt, second.payload.fetchedAt)
 })
 
+test('离线模式下实时数据如实报 503，进度表走快照', async () => {
+  const status = await call('/api/wardogs/status')
+  assert.equal(status.status, 503)
+  assert.equal(status.payload.code, 'upstream_unavailable')
+
+  const market = await call('/api/wardogs/market')
+  assert.equal(market.status, 503)
+
+  const progression = await call('/api/wardogs/progression')
+  assert.equal(progression.status, 200)
+  assert.equal(progression.payload.source, 'snapshot')
+  assert.equal(progression.payload.roles.length, 6)
+  assert.ok(progression.payload.actions.every((action) => typeof action.label === 'string'))
+})
+
+test('区 id 形状不对是 400，不会去碰上游', async () => {
+  const bad = await call('/api/wardogs/status/servers?zone=asia%20east')
+  assert.equal(bad.status, 400)
+  assert.equal(bad.payload.code, 'invalid_zone')
+  const missing = await call('/api/wardogs/status/servers')
+  assert.equal(missing.status, 400)
+})
+
+test('情报接口同样要登录', async () => {
+  const saved = cookie
+  cookie = ''
+  for (const pathname of ['/api/wardogs/status', '/api/wardogs/market', '/api/wardogs/progression']) {
+    assert.equal((await call(pathname)).status, 401, pathname)
+  }
+  cookie = saved
+})
+
 test('坏数据不会被当成弹道数据', () => {
   assert.equal(isBallisticsPayload(null), false)
   assert.equal(isBallisticsPayload({}), false)

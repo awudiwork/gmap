@@ -15,6 +15,12 @@ const TOOLS = Object.freeze({
     hash: '#wardogs/ballistics',
     load: () => import('./ballistics/index.js'),
   },
+  intel: {
+    label: '情报',
+    icon: 'pulse',
+    hash: '#wardogs/intel',
+    load: () => import('./wardogs/intel.js'),
+  },
 })
 
 /** 把当前频道的工具按钮渲染到标题栏。频道没有工具时清空 */

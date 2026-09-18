@@ -40,6 +40,11 @@ const ICONS = [
   'crosshair-simple', 'timer',                    // 伤害 / 时间
   'person', 'chart-line',                         // 视图标签
   'link-simple',                                  // 分享链接
+
+  // 情报面板
+  'pulse',                                        // 标题栏上的入口
+  'lock-simple',                                  // 密码服
+  'arrow-left',                                   // 从区清单回到汇总
 ]
 
 function resolveAssetsDir() {

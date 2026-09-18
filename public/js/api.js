@@ -56,6 +56,11 @@ export const api = {
 
   /** Wardogs 伤害计算器的数据：弹道数值 + 武器图标与解锁等级 */
   wardogsBallistics: () => get('/api/wardogs/ballistics'),
+  /** Wardogs 情报面板：服务器状态汇总、某个区的服务器清单、金条汇率、进度表 */
+  wardogsStatus: () => get('/api/wardogs/status'),
+  wardogsZoneServers: (zone) => get(`/api/wardogs/status/servers?zone=${encodeURIComponent(zone)}`),
+  wardogsMarket: () => get('/api/wardogs/market'),
+  wardogsProgression: () => get('/api/wardogs/progression'),
 
   /** before 向上翻历史；after 补拉比它新的（断线重连后用，0 表示从头） */
   messages: ({ room, before, after, limit } = {}) => {

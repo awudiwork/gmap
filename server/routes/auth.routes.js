@@ -115,7 +115,9 @@ authRouter.patch('/me', requireSession, wrap(async (req, res) => {
     await changeOwnPassword(id, currentPassword, newPassword)
     const { token } = createSession(id)
     setSessionCookie(res, token)
-    hub.disconnectUser(id)
+    // 等响应发完再断 WebSocket：本设备收到 4402 会立刻重连，
+    // 要是新 Cookie 还没到浏览器手里，重连就会被 4401 拒掉、被误踢去登录页
+    res.on('finish', () => hub.disconnectUser(id))
   }
 
   if (nextName !== null) {

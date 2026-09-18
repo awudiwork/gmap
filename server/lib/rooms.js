@@ -32,12 +32,13 @@ export const ROOMS = Object.freeze([
     short: 'WD',
     icon: '/games/wardogs.webp',
     hint: '战狗',
-    tools: Object.freeze(['ballistics']),
+    // 顺序就是标题栏上按钮的顺序
+    tools: Object.freeze(['intel', 'ballistics']),
   },
 ].map(Object.freeze))
 
 /** 前端认识的工具 id，清单里写了别的会在测试里报出来 */
-export const TOOL_IDS = Object.freeze(['ballistics'])
+export const TOOL_IDS = Object.freeze(['ballistics', 'intel'])
 
 /** 没指定房间时落在哪儿 */
 export const DEFAULT_ROOM = 'all'
